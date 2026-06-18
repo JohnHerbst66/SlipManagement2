@@ -50,6 +50,12 @@
             this.btnSave = new System.Windows.Forms.Button();
             this.btnCancel = new System.Windows.Forms.Button();
             this.btnPrint = new System.Windows.Forms.Button();
+            this.lblField8 = new System.Windows.Forms.Label();
+            this.lblField9 = new System.Windows.Forms.Label();
+            this.lblField10 = new System.Windows.Forms.Label();
+            this.textBox1 = new System.Windows.Forms.TextBox();
+            this.textBox2 = new System.Windows.Forms.TextBox();
+            this.textBox3 = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
             // label1
@@ -156,6 +162,7 @@
             // 
             this.txtSlipID.Location = new System.Drawing.Point(232, 136);
             this.txtSlipID.Name = "txtSlipID";
+            this.txtSlipID.ReadOnly = true;
             this.txtSlipID.Size = new System.Drawing.Size(231, 22);
             this.txtSlipID.TabIndex = 10;
             // 
@@ -205,6 +212,7 @@
             // 
             this.txtBilNumber.Location = new System.Drawing.Point(584, 136);
             this.txtBilNumber.Name = "txtBilNumber";
+            this.txtBilNumber.ReadOnly = true;
             this.txtBilNumber.Size = new System.Drawing.Size(231, 22);
             this.txtBilNumber.TabIndex = 17;
             // 
@@ -248,11 +256,68 @@
             this.btnPrint.UseVisualStyleBackColor = false;
             this.btnPrint.Click += new System.EventHandler(this.btnPrint_Click_1);
             // 
+            // lblField8
+            // 
+            this.lblField8.AutoSize = true;
+            this.lblField8.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblField8.Location = new System.Drawing.Point(469, 226);
+            this.lblField8.Name = "lblField8";
+            this.lblField8.Size = new System.Drawing.Size(48, 20);
+            this.lblField8.TabIndex = 22;
+            this.lblField8.Text = "Slot:";
+            // 
+            // lblField9
+            // 
+            this.lblField9.AutoSize = true;
+            this.lblField9.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblField9.Location = new System.Drawing.Point(469, 267);
+            this.lblField9.Name = "lblField9";
+            this.lblField9.Size = new System.Drawing.Size(107, 20);
+            this.lblField9.TabIndex = 23;
+            this.lblField9.Text = "Order Num:";
+            // 
+            // lblField10
+            // 
+            this.lblField10.AutoSize = true;
+            this.lblField10.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblField10.Location = new System.Drawing.Point(469, 305);
+            this.lblField10.Name = "lblField10";
+            this.lblField10.Size = new System.Drawing.Size(89, 20);
+            this.lblField10.TabIndex = 24;
+            this.lblField10.Text = "Remarks:";
+            // 
+            // textBox1
+            // 
+            this.textBox1.Location = new System.Drawing.Point(584, 305);
+            this.textBox1.Name = "textBox1";
+            this.textBox1.Size = new System.Drawing.Size(231, 22);
+            this.textBox1.TabIndex = 25;
+            // 
+            // textBox2
+            // 
+            this.textBox2.Location = new System.Drawing.Point(584, 265);
+            this.textBox2.Name = "textBox2";
+            this.textBox2.Size = new System.Drawing.Size(231, 22);
+            this.textBox2.TabIndex = 26;
+            // 
+            // textBox3
+            // 
+            this.textBox3.Location = new System.Drawing.Point(584, 224);
+            this.textBox3.Name = "textBox3";
+            this.textBox3.Size = new System.Drawing.Size(231, 22);
+            this.textBox3.TabIndex = 27;
+            // 
             // CreateSlip
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(960, 625);
+            this.Controls.Add(this.textBox3);
+            this.Controls.Add(this.textBox2);
+            this.Controls.Add(this.textBox1);
+            this.Controls.Add(this.lblField10);
+            this.Controls.Add(this.lblField9);
+            this.Controls.Add(this.lblField8);
             this.Controls.Add(this.btnPrint);
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnSave);
@@ -306,5 +371,11 @@
         private System.Windows.Forms.Button btnSave;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.Button btnPrint;
+        public System.Windows.Forms.Label lblField8;
+        public System.Windows.Forms.Label lblField9;
+        public System.Windows.Forms.Label lblField10;
+        public System.Windows.Forms.TextBox textBox1;
+        public System.Windows.Forms.TextBox textBox2;
+        public System.Windows.Forms.TextBox textBox3;
     }
 }

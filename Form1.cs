@@ -14,6 +14,12 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             InitializeComponent();
             // ⭐ Initialize our local database workspace automatically
             DatabaseManager.InitializeDatabase();
+           
+            // 2. ⭐ THE FIX: Determine the next true sequential ID directly from the SQLite records
+            Main.NextSlipId = DatabaseManager.GetNextSequentialSlipId();
+
+            // 3. Populate your pending tiles onto your flpSlips panel shelf
+            DatabaseManager.LoadSavedSlipsToDashboard(this.flpSlips);
         }
         private void Main_Load(object sender, EventArgs e)
         {
@@ -36,6 +42,15 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
 
         }
 
-       
+        private void btnSlipHistory_Click(object sender, EventArgs e)
+        {
+          SlipsHistoryForm options = new SlipsHistoryForm();
+            options.ShowDialog();
+        }
+
+        private void btnExit_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
+        }
     }
 }

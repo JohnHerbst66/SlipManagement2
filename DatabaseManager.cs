@@ -41,6 +41,29 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                     {
                         cmd.ExecuteNonQuery();
                     }
+                    bool columnExists = false;
+                    string checkColumnQuery = "PRAGMA table_info(slips);";
+
+                    using (SQLiteCommand checkCmd = new SQLiteCommand(checkColumnQuery, conn))
+                    using (SQLiteDataReader reader = checkCmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            if (reader["name"].ToString().Equals("IsPrinted", StringComparison.OrdinalIgnoreCase))
+                            {
+                                columnExists = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!columnExists)
+                    {
+                        string addColumnQuery = "ALTER TABLE slips ADD COLUMN IsPrinted INTEGER DEFAULT 0;";
+                        using (SQLiteCommand cmd = new SQLiteCommand(addColumnQuery, conn))
+                        {
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -48,6 +71,42 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                 MessageBox.Show("Database Initialization Error: " + ex.Message);
             }
         }
+        public static int GetNextSequentialSlipId()
+        {
+            // Default fallback to 1 if the table is completely empty
+            int highestId = 0;
+
+            string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
+            string connectionString = $"Data Source={dbPath};Version=3;";
+
+            try
+            {
+                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+                {
+                    conn.Open();
+
+                    // CAST converts the Text column into numbers so that 10 is recognized as higher than 9
+                    string query = "SELECT MAX(CAST(SlipID AS INTEGER)) FROM slips;";
+
+                    using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+                    {
+                        object result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                        {
+                            highestId = Convert.ToInt32(result);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error calculating sequence tracker: " + ex.Message);
+            }
+
+            // Return the highest found ID increased by 1
+            return highestId + 1;
+        }
+
 
         // Master function to save a brand new slip down into the SQLite file
         public static bool SaveSlip(string bilNum, string slipId, string f1, string f2, string f3, string f4, string f5, string f6, string f7)

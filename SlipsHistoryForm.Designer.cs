@@ -37,9 +37,9 @@
             this.btnSave = new System.Windows.Forms.Button();
             this.btnCancel = new System.Windows.Forms.Button();
             this.btnPrint = new System.Windows.Forms.Button();
-            this.button2 = new System.Windows.Forms.Button();
-            this.dateTimePicker1 = new System.Windows.Forms.DateTimePicker();
-            this.dateTimePicker2 = new System.Windows.Forms.DateTimePicker();
+            this.btnExport = new System.Windows.Forms.Button();
+            this.dtpToDate = new System.Windows.Forms.DateTimePicker();
+            this.dtpFromDate = new System.Windows.Forms.DateTimePicker();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).BeginInit();
             this.panel2.SuspendLayout();
@@ -48,8 +48,8 @@
             // 
             // panel1
             // 
-            this.panel1.Controls.Add(this.dateTimePicker2);
-            this.panel1.Controls.Add(this.dateTimePicker1);
+            this.panel1.Controls.Add(this.dtpFromDate);
+            this.panel1.Controls.Add(this.dtpToDate);
             this.panel1.Controls.Add(this.dataGridView1);
             this.panel1.Location = new System.Drawing.Point(12, 68);
             this.panel1.Name = "panel1";
@@ -65,6 +65,7 @@
             this.dataGridView1.RowTemplate.Height = 24;
             this.dataGridView1.Size = new System.Drawing.Size(1168, 217);
             this.dataGridView1.TabIndex = 0;
+            this.dataGridView1.CellClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridView1_CellClick);
             // 
             // panel2
             // 
@@ -81,7 +82,7 @@
             this.tabControl1.Location = new System.Drawing.Point(19, 3);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(1168, 251);
+            this.tabControl1.Size = new System.Drawing.Size(1168, 279);
             this.tabControl1.TabIndex = 0;
             // 
             // tabPage1
@@ -89,9 +90,9 @@
             this.tabPage1.Location = new System.Drawing.Point(4, 25);
             this.tabPage1.Name = "tabPage1";
             this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(1160, 222);
+            this.tabPage1.Size = new System.Drawing.Size(1160, 250);
             this.tabPage1.TabIndex = 0;
-            this.tabPage1.Text = "tabPage1";
+            this.tabPage1.Text = "VIEW SLIP";
             this.tabPage1.UseVisualStyleBackColor = true;
             // 
             // tabPage2
@@ -99,9 +100,9 @@
             this.tabPage2.Location = new System.Drawing.Point(4, 25);
             this.tabPage2.Name = "tabPage2";
             this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage2.Size = new System.Drawing.Size(407, 196);
+            this.tabPage2.Size = new System.Drawing.Size(1160, 250);
             this.tabPage2.TabIndex = 1;
-            this.tabPage2.Text = "tabPage2";
+            this.tabPage2.Text = "EDIT SLIP";
             this.tabPage2.UseVisualStyleBackColor = true;
             // 
             // btnSave
@@ -113,6 +114,7 @@
             this.btnSave.TabIndex = 20;
             this.btnSave.Text = "SAVE";
             this.btnSave.UseVisualStyleBackColor = false;
+            this.btnSave.Click += new System.EventHandler(this.btnSave_Click);
             // 
             // btnCancel
             // 
@@ -123,6 +125,7 @@
             this.btnCancel.TabIndex = 21;
             this.btnCancel.Text = "Exit";
             this.btnCancel.UseVisualStyleBackColor = false;
+            this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click);
             // 
             // btnPrint
             // 
@@ -133,37 +136,41 @@
             this.btnPrint.TabIndex = 22;
             this.btnPrint.Text = "PRINT";
             this.btnPrint.UseVisualStyleBackColor = false;
+            this.btnPrint.Click += new System.EventHandler(this.btnPrint_Click);
             // 
-            // button2
+            // btnExport
             // 
-            this.button2.BackColor = System.Drawing.Color.SteelBlue;
-            this.button2.Location = new System.Drawing.Point(1062, 15);
-            this.button2.Name = "button2";
-            this.button2.Size = new System.Drawing.Size(137, 47);
-            this.button2.TabIndex = 24;
-            this.button2.Text = "Export to:";
-            this.button2.UseVisualStyleBackColor = false;
+            this.btnExport.BackColor = System.Drawing.Color.SteelBlue;
+            this.btnExport.Location = new System.Drawing.Point(1062, 15);
+            this.btnExport.Name = "btnExport";
+            this.btnExport.Size = new System.Drawing.Size(137, 47);
+            this.btnExport.TabIndex = 24;
+            this.btnExport.Text = "Export to:";
+            this.btnExport.UseVisualStyleBackColor = false;
+            this.btnExport.Click += new System.EventHandler(this.btnExport_Click);
             // 
-            // dateTimePicker1
+            // dtpToDate
             // 
-            this.dateTimePicker1.Location = new System.Drawing.Point(420, 24);
-            this.dateTimePicker1.Name = "dateTimePicker1";
-            this.dateTimePicker1.Size = new System.Drawing.Size(200, 22);
-            this.dateTimePicker1.TabIndex = 1;
+            this.dtpToDate.Location = new System.Drawing.Point(420, 24);
+            this.dtpToDate.Name = "dtpToDate";
+            this.dtpToDate.Size = new System.Drawing.Size(200, 22);
+            this.dtpToDate.TabIndex = 1;
+            this.dtpToDate.ValueChanged += new System.EventHandler(this.dtpToDate_ValueChanged);
             // 
-            // dateTimePicker2
+            // dtpFromDate
             // 
-            this.dateTimePicker2.Location = new System.Drawing.Point(420, 0);
-            this.dateTimePicker2.Name = "dateTimePicker2";
-            this.dateTimePicker2.Size = new System.Drawing.Size(200, 22);
-            this.dateTimePicker2.TabIndex = 2;
+            this.dtpFromDate.Location = new System.Drawing.Point(420, 0);
+            this.dtpFromDate.Name = "dtpFromDate";
+            this.dtpFromDate.Size = new System.Drawing.Size(200, 22);
+            this.dtpFromDate.TabIndex = 2;
+            this.dtpFromDate.ValueChanged += new System.EventHandler(this.dtpFromDate_ValueChanged);
             // 
             // SlipsHistoryForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1230, 665);
-            this.Controls.Add(this.button2);
+            this.ClientSize = new System.Drawing.Size(1230, 731);
+            this.Controls.Add(this.btnExport);
             this.Controls.Add(this.btnPrint);
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnSave);
@@ -187,11 +194,11 @@
         private System.Windows.Forms.Button btnSave;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.Button btnPrint;
-        private System.Windows.Forms.Button button2;
+        private System.Windows.Forms.Button btnExport;
         private System.Windows.Forms.TabControl tabControl1;
         private System.Windows.Forms.TabPage tabPage1;
         private System.Windows.Forms.TabPage tabPage2;
-        private System.Windows.Forms.DateTimePicker dateTimePicker2;
-        private System.Windows.Forms.DateTimePicker dateTimePicker1;
+        private System.Windows.Forms.DateTimePicker dtpFromDate;
+        private System.Windows.Forms.DateTimePicker dtpToDate;
     }
 }
