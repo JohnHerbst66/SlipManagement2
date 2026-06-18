@@ -59,34 +59,50 @@ namespace SlipManagement2
         }
 
         private void btnSave_Click(object sender, EventArgs e)
+        
         {
             string bilNumber = txtBilNumber.Text;
             string slipId = txtSlipID.Text;
-            string f1 = txtField1.Text;
-            string f2 = txtField2.Text;
-            string f3 = txtField3.Text;
-            string f4 = txtField4.Text;
-            string f5 = txtField5.Text;
-            string f6 = txtField6.Text;
-            string f7 = txtField7.Text;
 
-            // 1. Save data directly to SQLite database
-            bool databaseSaved = DatabaseManager.SaveSlip(bilNumber, slipId, f1, f2, f3, f4, f5, f6, f7);
+            // 1. Create a dynamic string array to store all 10 field values safely
+            string[] fields = new string[10];
+            for (int i = 1; i <= 10; i++)
+            {
+                Control[] matches = this.Controls.Find("txtField" + i, true);
+                fields[i - 1] = (matches.Length > 0 && matches[0] is TextBox tb) ? tb.Text : "";
+            }
+
+            // 2. SAVE SECURELY TO SQLITE DATABASE WITH ALL 10 FIELD ARRAYS
+            bool databaseSaved = DatabaseManager.SaveSlip(
+                bilNumber, slipId,
+                fields[0], fields[1], fields[2], fields[3], fields[4],
+                fields[5], fields[6], fields[7], fields[8], fields[9]
+            );
+
             if (!databaseSaved) return;
 
-            string formattedTileText = $"🚚 Reg: {(string.IsNullOrWhiteSpace(f1) ? "No Reg" : f1)}\n🆔 Slip: {slipId}\n⚖️ Tons: {(string.IsNullOrWhiteSpace(f7) ? "0" : f7)}";
+            // 3. Setup text display metrics for your visible dashboard tracking tile card (Field 1 and Field 7)
+            string regDisplay = string.IsNullOrWhiteSpace(fields[0]) ? "No Reg" : fields[0];
+            string tonsDisplay = string.IsNullOrWhiteSpace(fields[6]) ? "0" : fields[6];
+            string formattedTileText = $"🚚 Reg: {regDisplay}\n🆔 Slip: {slipId}\n⚖️ Tons: {tonsDisplay}";
 
             if (this.Tag is Button existingCard)
             {
+                // EDIT MODE: Update existing dashboard card face text
                 existingCard.Text = formattedTileText;
+
+                // Synchronize all 10 fields within the card tile container memory dictionary cache
                 if (existingCard.Tag is Dictionary<string, string> savedData)
                 {
-                    savedData["Field1"] = f1; savedData["Field2"] = f2; savedData["Field3"] = f3;
-                    savedData["Field4"] = f4; savedData["Field5"] = f5; savedData["Field6"] = f6; savedData["Field7"] = f7;
+                    for (int i = 1; i <= 10; i++)
+                    {
+                        savedData["Field" + i] = fields[i - 1];
+                    }
                 }
             }
             else
             {
+                // NEW MODE: Build a brand new yellow workspace tracking card tile
                 Button slipCard = new Button();
                 slipCard.Size = new Size(200, 110);
                 slipCard.BackColor = Color.LightYellow;
@@ -95,13 +111,20 @@ namespace SlipManagement2
                 slipCard.Text = formattedTileText;
                 slipCard.Click += SlipCard_Click;
 
-                slipCard.Tag = new Dictionary<string, string>
-                {
-                    { "SlipID", slipId }, { "BilNumber", bilNumber },
-                    { "Field1", f1 }, { "Field2", f2 }, { "Field3", f3 },
-                    { "Field4", f4 }, { "Field5", f5 }, { "Field6", f6 }, { "Field7", f7 }
-                };
+                // Initialize and fill the core dictionary container data properties block
+                var memoryCache = new Dictionary<string, string>
+        {
+            { "SlipID", slipId },
+            { "BilNumber", bilNumber }
+        };
 
+                for (int i = 1; i <= 10; i++)
+                {
+                    memoryCache.Add("Field" + i, fields[i - 1]);
+                }
+                slipCard.Tag = memoryCache;
+
+                // Mount the tile directly to your main workspace panel container
                 Main mainPage = (Main)Application.OpenForms["Main"];
                 if (mainPage != null)
                 {
@@ -114,7 +137,9 @@ namespace SlipManagement2
             this.Close();
         }
 
+
         private void SlipCard_Click(object sender, EventArgs e)
+        
         {
             Button clickedCard = (Button)sender;
             if (clickedCard.Tag is Dictionary<string, string> savedData)
@@ -122,13 +147,16 @@ namespace SlipManagement2
                 CreateSlip editForm = new CreateSlip();
                 editForm.txtSlipID.Text = savedData["SlipID"];
                 editForm.txtBilNumber.Text = savedData["BilNumber"];
-                editForm.txtField1.Text = savedData["Field1"];
-                editForm.txtField2.Text = savedData["Field2"];
-                editForm.txtField3.Text = savedData["Field3"];
-                editForm.txtField4.Text = savedData["Field4"];
-                editForm.txtField5.Text = savedData["Field5"];
-                editForm.txtField6.Text = savedData["Field6"];
-                editForm.txtField7.Text = savedData["Field7"];
+
+                // ⭐ LOOP TO LOAD ALL 10 POPULATED FIELDS BACK INTO TEXTBOX CONTROLS
+                for (int i = 1; i <= 10; i++)
+                {
+                    Control[] txtMatches = editForm.Controls.Find("txtField" + i, true);
+                    if (txtMatches.Length > 0 && txtMatches[0] is TextBox tb && savedData.ContainsKey("Field" + i))
+                    {
+                        tb.Text = savedData["Field" + i];
+                    }
+                }
 
                 editForm.Tag = clickedCard;
                 editForm.ShowDialog();
