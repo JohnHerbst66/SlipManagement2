@@ -43,10 +43,14 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
         }
 
         private void btnSlipHistory_Click(object sender, EventArgs e)
+        
         {
-          SlipsHistoryForm options = new SlipsHistoryForm();
-            options.ShowDialog();
+            // Opens your freshly unified, error-free history vault form
+            SlipsHistoryForm historyPage = new SlipsHistoryForm();
+            historyPage.ShowDialog();
         }
+
+        
 
         private void btnExit_Click(object sender, EventArgs e)
         {

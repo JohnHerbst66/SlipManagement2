@@ -103,9 +103,9 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             Button btnConfigure = new Button() { Text = "⚙️ Settings", Location = new Point(185, 560), Size = new Size(100, 40), FlatStyle = FlatStyle.Flat };
             Button btnCloseOut = new Button() { Text = "🔴 Cancel", Location = new Point(300, 560), Size = new Size(100, 40), BackColor = Color.LightCoral, FlatStyle = FlatStyle.Flat };
 
-            btnFinalPrint.Click += BtnFinalPrint_Click;
+            /*btnFinalPrint.Click += BtnFinalPrint_Click;
             btnConfigure.Click += BtnConfigure_Click;
-            btnCloseOut.Click += (s, e) => this.Close();
+            btnCloseOut.Click += (s, e) => this.Close();*/
 
             this.Controls.Add(btnFinalPrint);
             this.Controls.Add(btnConfigure);
@@ -127,7 +127,7 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             }
         }
 
-        private void BtnFinalPrint_Click(object sender, EventArgs e)
+        /*private void BtnFinalPrint_Click(object sender, EventArgs e)
         {
             try
             {
@@ -186,26 +186,35 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
                     // Replace the old block where you called DrawString for Field1 to 7 with this loop:
                     var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
 
-                    for (int i = 1; i <= 6; i++)
+                    
+
+                    for (int i = 1; i <= 10; i++)
                     {
                         string key = "Field" + i;
+
+                        // Skip checking Field7 inside this loop because it handles your large Net Weight readout separately below!
+                        if (key == "Field7") continue;
+
                         if (fieldConfigs.ContainsKey(key))
                         {
                             var cfg = fieldConfigs[key];
 
-                            // Skip printing completely if the configuration status is marked hidden!
+                            // If a field was unchecked or hidden in your customization template, skip it to save paper roll space!
                             if (cfg.IsHidden) continue;
 
-                            // Fetch values dynamically from your public display labels
-                            Label outputLabel = this.Controls.Find("lblOutput" + i, true)[0] as Label;
+                            // Fetch values dynamically from your public display labels sitting on the screen preview canvas
+                            Control[] outputMatches = this.Controls.Find("lblOutput" + i, true);
+                            Label outputLabel = outputMatches.Length > 0 ? outputMatches[0] as Label : null;
+
                             string displayValue = outputLabel != null ? outputLabel.Text : "";
                             string cleanHeaderName = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
 
-                            // Print using clean spacing padding alignment format blocks
+                            // Print to the physical paper using clean column spacing padding alignment
                             g.DrawString($"{cleanHeaderName,-15} {displayValue}", regularFont, Brushes.Black, startX, startY);
                             startY += gap;
                         }
                     }
+
 
                     // Draw a dynamic bold line block for your weight category metric (Field 7)
                     if (fieldConfigs.ContainsKey("Field7") && !fieldConfigs["Field7"].IsHidden)
@@ -217,7 +226,7 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
                     }
 
                     // 4. Verification Footer Trace line
-                    g.DrawString("Operator Sign: ___________________________", regularFont, Brushes.Black, startX, startY);
+                    g.DrawString("Operator Sign: _________________________ ", regularFont, Brushes.Black, startX, startY);
 
                     if (isCustomSlip)
                     {
@@ -237,7 +246,7 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
                 MessageBox.Show("Printing Subsystem Error: " + ex.Message);
             }
         }
-
+        */
 
     }
 }

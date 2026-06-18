@@ -2,117 +2,110 @@
 using System.Drawing.Printing;
 using System.Windows.Forms;
 
-namespace SlipManagement2 // Double-check that this matches your exact namespace spelling
+namespace SlipManagement2
 {
     public partial class PrinterSettingsForm : Form
     {
-        // Global variables available instantly to your print preview forms
-        public static string SelectedPrinterName = "EPSON LX-350";
-        public static PaperSize SelectedPaperSizeObject = null;
-        public static float CustomPageLengthInches = 5.5f;
-
         public PrinterSettingsForm()
         {
             InitializeComponent();
-            this.Text = "Hardware Settings Center";
+            this.Text = "Hardware Profile Settings Center";
             this.StartPosition = FormStartPosition.CenterParent;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
 
-            // 1. Populate all installed printers on the computer
-            foreach (string printer in PrinterSettings.InstalledPrinters)
-            {
-                cmbPrinters.Items.Add(printer);
-            }
-
-            if (cmbPrinters.Items.Contains(SelectedPrinterName))
-                cmbPrinters.SelectedItem = SelectedPrinterName;
-            else if (cmbPrinters.Items.Count > 0)
-                cmbPrinters.SelectedIndex = 0;
-
-            // 2. Wire an event when the printer dropdown changes to refresh available paper formats
-            cmbPrinters.SelectedIndexChanged += (s, e) => {
-                SelectedPrinterName = cmbPrinters.SelectedItem.ToString();
-                LoadPrinterPaperSizes();
-            };
-
-            // Initial load of paper profiles based on default printer selection
-            LoadPrinterPaperSizes();
-
-            txtSlipLength.Text = CustomPageLengthInches.ToString();
-            cmbPaperSizes.SelectedIndexChanged += (s, e) => ToggleLengthInputVisibility();
+            LoadSettingsFromDb();
         }
 
-        // ⭐ THE DYNAMIC FUNCTION: Fetches size profiles directly from the hardware driver
-        private void LoadPrinterPaperSizes()
+        private void LoadSettingsFromDb()
         {
-            cmbPaperSizes.Items.Clear();
             try
             {
-                PrinterSettings settings = new PrinterSettings { PrinterName = SelectedPrinterName };
-
-                // Add your custom continuous slip option as a manual override layout
-                cmbPaperSizes.Items.Add("Custom Continuous Slip");
-
-                foreach (PaperSize size in settings.PaperSizes)
+                // 1. Clear and populate all active Windows system printers
+                cmbPrinters.Items.Clear();
+                foreach (string printer in PrinterSettings.InstalledPrinters)
                 {
-                    cmbPaperSizes.Items.Add(size.PaperName);
+                    cmbPrinters.Items.Add(printer);
                 }
 
-                if (cmbPaperSizes.Items.Count > 0)
-                    cmbPaperSizes.SelectedIndex = 0;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error loading printer paper formats: " + ex.Message);
-            }
-        }
+                // Restore saved printer selection, default to Epson LX-350 if not set
+                string savedPrinter = DatabaseManager.GetGlobalSetting("SelectedPrinter", "EPSON LX-350");
+                if (cmbPrinters.Items.Contains(savedPrinter))
+                    cmbPrinters.SelectedItem = savedPrinter;
+                else if (cmbPrinters.Items.Count > 0)
+                    cmbPrinters.SelectedIndex = 0;
 
-        private void ToggleLengthInputVisibility()
-        {
-            if (cmbPaperSizes.SelectedItem != null)
-            {
-                // Only enable the custom length text field if "Custom Continuous Slip" is active
-                bool isCustom = cmbPaperSizes.SelectedItem.ToString() == "Custom Continuous Slip";
-                txtSlipLength.Enabled = isCustom;
-            }
-        }
+                // 2. Populate specified paper profile sizes
+                cmbPaperSizes.Items.Clear();
+                cmbPaperSizes.Items.Add("A4");
+                cmbPaperSizes.Items.Add("A5");
+                cmbPaperSizes.Items.Add("A6");
+                cmbPaperSizes.Items.Add("Letter");
+                cmbPaperSizes.Items.Add("Small151x151");
+                cmbPaperSizes.Items.Add("Small240x102");
 
-        private void btnCancelSettings_Click(object sender, EventArgs e)
-        {
-            this.Close();
-        }
-
-        private void btnSaveSettings_Click(object sender, EventArgs e)
-        {
-            if (cmbPrinters.SelectedItem != null)
-                SelectedPrinterName = cmbPrinters.SelectedItem.ToString();
-
-            if (cmbPaperSizes.SelectedItem != null)
-            {
-                string selectedName = cmbPaperSizes.SelectedItem.ToString();
-
-                if (selectedName == "Custom Continuous Slip")
-                {
-                    SelectedPaperSizeObject = null; // Use manual length formula override
-                }
+                string savedPaper = DatabaseManager.GetGlobalSetting("PaperSizeProfile", "A4");
+                if (cmbPaperSizes.Items.Contains(savedPaper))
+                    cmbPaperSizes.SelectedItem = savedPaper;
                 else
+                    cmbPaperSizes.SelectedIndex = 0;
+
+                // 3. Populate Orientation profile settings
+                cmbOrientation.Items.Clear();
+                cmbOrientation.Items.Add("Portrait");
+                cmbOrientation.Items.Add("Landscape");
+
+                string savedOrientation = DatabaseManager.GetGlobalSetting("PrintOrientation", "Portrait");
+                if (cmbOrientation.Items.Contains(savedOrientation))
+                    cmbOrientation.SelectedItem = savedOrientation;
+                else
+                    cmbOrientation.SelectedIndex = 0;
+
+                // 4. Populate Print Copies Counter Selection bounds
+                string savedCopies = DatabaseManager.GetGlobalSetting("PrintCopiesCount", "1");
+                if (numCopies != null)
                 {
-                    // Search for the matching PaperSize object inside the active driver map
-                    PrinterSettings settings = new PrinterSettings { PrinterName = SelectedPrinterName };
-                    foreach (PaperSize size in settings.PaperSizes)
+                    if (decimal.TryParse(savedCopies, out decimal copiesVal))
                     {
-                        if (size.PaperName == selectedName)
-                        {
-                            SelectedPaperSizeObject = size;
-                            break;
-                        }
+                        if (copiesVal >= numCopies.Minimum && copiesVal <= numCopies.Maximum)
+                            numCopies.Value = copiesVal;
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading device configuration states: " + ex.Message, "System Registry Error");
+            }
+        }
 
-            if (float.TryParse(txtSlipLength.Text, out float checkLength))
-                CustomPageLengthInches = checkLength;
+        // Link this to your btnSaveSettings_Click event inside your properties click panels
+        private void btnSaveSettings_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string printerName = cmbPrinters.SelectedItem?.ToString() ?? "EPSON LX-350";
+                string paperSize = cmbPaperSizes.SelectedItem?.ToString() ?? "A4";
+                string orientation = cmbOrientation.SelectedItem?.ToString() ?? "Portrait";
+                string copiesCount = numCopies != null ? numCopies.Value.ToString() : "1";
 
-            MessageBox.Show("Printer configurations applied successfully!", "System Notice");
+                // Save configurations directly inside the portable SQLite file storage tracking slots
+                DatabaseManager.SaveGlobalSetting("SelectedPrinter", printerName);
+                DatabaseManager.SaveGlobalSetting("PaperSizeProfile", paperSize);
+                DatabaseManager.SaveGlobalSetting("PrintOrientation", orientation);
+                DatabaseManager.SaveGlobalSetting("PrintCopiesCount", copiesCount);
+
+                MessageBox.Show("Hardware profile definitions saved securely into local database storage cache!", "Configuration Protected");
+                this.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed updating device parameters data entries: " + ex.Message);
+            }
+        }
+
+        // Link this to your btnCancelSettings_Click event inside your designer properties click panels
+        private void btnCancelSettings_Click(object sender, EventArgs e)
+        {
             this.Close();
         }
     }

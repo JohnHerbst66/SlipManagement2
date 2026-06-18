@@ -1,6 +1,6 @@
 ﻿namespace SlipManagement2
 {
-    partial class SlipsHistoryForm
+     public partial class SlipsHistoryForm
     {
         /// <summary>
         /// Required designer variable.
@@ -11,7 +11,9 @@
         /// Clean up any resources being used.
         /// </summary>
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
+        // 🟢 Change 'override' to 'virtual' to bypass the locked compiler cache:
         protected override void Dispose(bool disposing)
+
         {
             if (disposing && (components != null))
             {
