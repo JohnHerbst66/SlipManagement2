@@ -166,49 +166,38 @@ namespace SlipManagement2
         private void btnPrint_Click(object sender, EventArgs e)
         
         {
-            PrintSlipPreview preview = new PrintSlipPreview();
+            // 1. Pack all 10 entry textbox strings into a data dictionary package
+            var printPackage = new Dictionary<string, string>
+    {
+        { "SlipID", txtSlipID.Text },
+        { "BilNumber", txtBilNumber.Text }
+    };
 
-            // 1. Map the stationary header identifiers
-            preview.lblSlipIdOutput.Text = txtSlipID.Text;
-            preview.lblBilNumberOutput.Text = txtBilNumber.Text;
-
-            // 2. Map all 10 text inputs dynamically to your preview labels in a single loop
-            // 🟢 FIXED ARRAY-SAFE PRINT TRANSMISSION LOOP
             for (int i = 1; i <= 10; i++)
             {
-                // 1. Fetch the control arrays using the Find function
-                Control[] textboxMatches = this.Controls.Find("txtField" + i, true);
-                Control[] labelMatches = preview.Controls.Find("lblOutput" + i, true);
-
-                // 2. Extract the single control safely if an item was found in the list array index [0]
-                TextBox sourceTextBox = textboxMatches.Length > 0 ? textboxMatches[0] as TextBox : null;
-                Label targetLabel = labelMatches.Length > 0 ? labelMatches[0] as Label : null;
-
-                if (sourceTextBox != null && targetLabel != null)
-                {
-                    targetLabel.Text = sourceTextBox.Text;
-                }
+                Control[] txtMatches = this.Controls.Find("txtField" + i, true);
+                string textValue = (txtMatches.Length > 0 && txtMatches[0] is TextBox tb) ? tb.Text : "";
+                printPackage.Add("Field" + i, textValue);
             }
 
-            // 3. Open up your dynamically populated validation preview screen
-            DialogResult result = preview.ShowDialog();
+            // 2. ROUTE STRAIGHT INTO YOUR UNBREAKABLE PRINT ENGINE CLASS!
+            SlipPrintEngine.ExecutePrintJob(printPackage);
 
-            if (result == DialogResult.OK)
+            // 3. Mark row as printed and clear the dashboard tile card
+            if (this.Tag is Button cardToDelete)
             {
-                if (this.Tag is Button cardToDelete)
-                {
-                    DatabaseManager.MarkSlipAsPrinted(txtBilNumber.Text);
+                DatabaseManager.MarkSlipAsPrinted(txtBilNumber.Text);
 
-                    Main mainPage = (Main)Application.OpenForms["Main"];
-                    if (mainPage != null)
-                    {
-                        mainPage.flpSlips.Controls.Remove(cardToDelete);
-                        cardToDelete.Dispose();
-                    }
+                Main mainPage = (Main)Application.OpenForms["Main"];
+                if (mainPage != null)
+                {
+                    mainPage.flpSlips.Controls.Remove(cardToDelete);
+                    cardToDelete.Dispose();
                 }
-                this.Close();
             }
+            this.Close();
         }
+
 
 
         // Paste these three helper routines to satisfy the background designer file errors:

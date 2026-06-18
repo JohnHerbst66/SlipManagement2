@@ -277,37 +277,35 @@ namespace SlipManagement2
 
         private void btnPrint_Click(object sender, EventArgs e)
        
+       
         {
             if (dataGridView1.SelectedRows.Count == 0)
             {
-                MessageBox.Show("Please highlight an archive row to reprint!");
+                MessageBox.Show("Please highlight an archive log row in the grid first!");
                 return;
             }
 
             DataGridViewRow row = dataGridView1.SelectedRows[0];
-            PrintSlipPreview reprint = new PrintSlipPreview();
 
-            // 1. Inject the stationary audit trail identifiers
-            reprint.lblSlipIdOutput.Text = row.Cells["SlipID"].Value.ToString();
-            reprint.lblBilNumberOutput.Text = row.Cells["BilNumber"].Value.ToString();
+            // 1. Pack historical cell columns data directly into the package
+            var historyPackage = new Dictionary<string, string>
+    {
+        { "SlipID", row.Cells["SlipID"].Value?.ToString() ?? "" },
+        { "BilNumber", row.Cells["BilNumber"].Value?.ToString() ?? "" }
+    };
 
-            // 2. ⭐ THE INSTANT FIX: Loop to map all 10 columns safely to the preview labels
             for (int i = 1; i <= 10; i++)
             {
-                // Search for the output text display labels on the print preview form
-                Control[] targetLabelMatches = reprint.Controls.Find("lblOutput" + i, true);
-                Label targetLabel = targetLabelMatches.Length > 0 ? targetLabelMatches[0] as Label : null;
-
-                if (targetLabel != null && row.Cells["Field" + i].Value != null)
-                {
-                    // Transfer the text cell string from the grid directly onto the slip template preview
-                    targetLabel.Text = row.Cells["Field" + i].Value.ToString();
-                }
+                string val = row.Cells["Field" + i].Value?.ToString() ?? "";
+                historyPackage.Add("Field" + i, val);
             }
 
-            // 3. Open your updated pop-up window
-            reprint.ShowDialog();
+            // 2. EXECUTE THE PRINT JOB USING THE SAME ENGINE LOGIC LAYER
+            SlipPrintEngine.ExecutePrintJob(historyPackage);
+
+            MessageBox.Show("Historical slip copy sent to printer successfully!", "Process Complete");
         }
+
 
 
         private void btnExport_Click(object sender, EventArgs e)
