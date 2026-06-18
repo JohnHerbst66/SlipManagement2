@@ -50,12 +50,6 @@
             this.lblSlipID2 = new System.Windows.Forms.Label();
             this.lblLogo = new System.Windows.Forms.Label();
             this.panel2 = new System.Windows.Forms.Panel();
-            this.label1 = new System.Windows.Forms.Label();
-            this.label2 = new System.Windows.Forms.Label();
-            this.label4 = new System.Windows.Forms.Label();
-            this.label6 = new System.Windows.Forms.Label();
-            this.label3 = new System.Windows.Forms.Label();
-            this.label5 = new System.Windows.Forms.Label();
             this.pnlSlip.SuspendLayout();
             this.pnlTons.SuspendLayout();
             this.SuspendLayout();
@@ -63,12 +57,6 @@
             // pnlSlip
             // 
             this.pnlSlip.BackColor = System.Drawing.Color.White;
-            this.pnlSlip.Controls.Add(this.label6);
-            this.pnlSlip.Controls.Add(this.label5);
-            this.pnlSlip.Controls.Add(this.label4);
-            this.pnlSlip.Controls.Add(this.label3);
-            this.pnlSlip.Controls.Add(this.label2);
-            this.pnlSlip.Controls.Add(this.label1);
             this.pnlSlip.Controls.Add(this.lblSlipIdOutput);
             this.pnlSlip.Controls.Add(this.lblBilNumberOutput);
             this.pnlSlip.Controls.Add(this.lblOutput6);
@@ -300,66 +288,6 @@
             this.panel2.Size = new System.Drawing.Size(791, 2);
             this.panel2.TabIndex = 0;
             // 
-            // label1
-            // 
-            this.label1.AutoSize = true;
-            this.label1.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label1.Location = new System.Drawing.Point(33, 460);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(67, 20);
-            this.label1.TabIndex = 20;
-            this.label1.Text = "Empty:";
-            // 
-            // label2
-            // 
-            this.label2.AutoSize = true;
-            this.label2.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label2.Location = new System.Drawing.Point(33, 501);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(67, 20);
-            this.label2.TabIndex = 21;
-            this.label2.Text = "Empty:";
-            // 
-            // label4
-            // 
-            this.label4.AutoSize = true;
-            this.label4.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label4.Location = new System.Drawing.Point(218, 460);
-            this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(75, 20);
-            this.label4.TabIndex = 23;
-            this.label4.Text = "Output7";
-            // 
-            // label6
-            // 
-            this.label6.AutoSize = true;
-            this.label6.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label6.Location = new System.Drawing.Point(218, 501);
-            this.label6.Name = "label6";
-            this.label6.Size = new System.Drawing.Size(75, 20);
-            this.label6.TabIndex = 25;
-            this.label6.Text = "Output8";
-            // 
-            // label3
-            // 
-            this.label3.AutoSize = true;
-            this.label3.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label3.Location = new System.Drawing.Point(33, 537);
-            this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(67, 20);
-            this.label3.TabIndex = 22;
-            this.label3.Text = "Empty:";
-            // 
-            // label5
-            // 
-            this.label5.AutoSize = true;
-            this.label5.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label5.Location = new System.Drawing.Point(218, 537);
-            this.label5.Name = "label5";
-            this.label5.Size = new System.Drawing.Size(75, 20);
-            this.label5.TabIndex = 24;
-            this.label5.Text = "Output9";
-            // 
             // PrintSlipPreview
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
@@ -401,11 +329,5 @@
         public System.Windows.Forms.Label lblOutput1;
         public System.Windows.Forms.Label lblSlipIdOutput;
         public System.Windows.Forms.Label lblOutput7;
-        public System.Windows.Forms.Label label6;
-        public System.Windows.Forms.Label label4;
-        public System.Windows.Forms.Label label2;
-        public System.Windows.Forms.Label label1;
-        public System.Windows.Forms.Label label5;
-        public System.Windows.Forms.Label label3;
     }
 }

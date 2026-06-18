@@ -5,63 +5,80 @@ using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 
-namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
+namespace SlipManagement2
 {
     public static class DatabaseManager
     {
-        // The database file will sit right in the same folder as your app exe
         private static string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
         private static string connectionString = $"Data Source={dbPath};Version=3;";
 
+        // 1. INITIALIZE DATABASE: Builds the updated 10-field table architecture and settings maps
         public static void InitializeDatabase()
         {
             try
             {
-                // Create the table structure if the database file doesn't exist yet
                 using (SQLiteConnection conn = new SQLiteConnection(connectionString))
                 {
                     conn.Open();
 
-                    string createTableQuery = @"
+                    // Main slips table updated to hold up to 10 pre-allocated structural columns
+                    string createSlipsTable = @"
                         CREATE TABLE IF NOT EXISTS slips (
                             BilNumber TEXT PRIMARY KEY,
                             SlipID TEXT,
-                            Field1 TEXT,
-                            Field2 TEXT,
-                            Field3 TEXT,
-                            Field4 TEXT,
-                            Field5 TEXT,
-                            Field6 TEXT,
-                            Field7 TEXT,
-                            IsPrinted INTEGER DEFAULT 0, -- 0 means No/Pending, 1 means Yes/Printed
+                            Field1 TEXT, Field2 TEXT, Field3 TEXT, Field4 TEXT, Field5 TEXT,
+                            Field6 TEXT, Field7 TEXT, Field8 TEXT, Field9 TEXT, Field10 TEXT,
+                            IsPrinted INTEGER DEFAULT 0,
                             CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
                         );";
 
-                    using (SQLiteCommand cmd = new SQLiteCommand(createTableQuery, conn))
-                    {
-                        cmd.ExecuteNonQuery();
-                    }
-                    bool columnExists = false;
-                    string checkColumnQuery = "PRAGMA table_info(slips);";
+                    // Dynamic templates custom mapping definitions data table
+                    string createConfigTable = @"
+                        CREATE TABLE IF NOT EXISTS field_config (
+                            FieldKey TEXT PRIMARY KEY, -- 'Field1' through 'Field10'
+                            CustomName TEXT DEFAULT '',
+                            PositionOrder INTEGER DEFAULT 1,
+                            IsHidden INTEGER DEFAULT 0 -- 0 = Visible, 1 = Hidden
+                        );";
 
-                    using (SQLiteCommand checkCmd = new SQLiteCommand(checkColumnQuery, conn))
-                    using (SQLiteDataReader reader = checkCmd.ExecuteReader())
+                    // White-label corporate metadata settings table
+                    string createSettingsTable = @"
+                        CREATE TABLE IF NOT EXISTS global_settings (
+                            SettingKey TEXT PRIMARY KEY,
+                            SettingValue TEXT DEFAULT ''
+                        );";
+
+                    using (SQLiteCommand cmd = new SQLiteCommand(createSlipsTable, conn)) { cmd.ExecuteNonQuery(); }
+                    using (SQLiteCommand cmd = new SQLiteCommand(createConfigTable, conn)) { cmd.ExecuteNonQuery(); }
+                    using (SQLiteCommand cmd = new SQLiteCommand(createSettingsTable, conn)) { cmd.ExecuteNonQuery(); }
+
+                    // Pre-populate the 10 customizable layout slots on initial setup execution
+                    string checkFresh = "SELECT COUNT(*) FROM field_config;";
+                    using (SQLiteCommand checkCmd = new SQLiteCommand(checkFresh, conn))
                     {
-                        while (reader.Read())
+                        long count = (long)checkCmd.ExecuteScalar();
+                        if (count == 0)
                         {
-                            if (reader["name"].ToString().Equals("IsPrinted", StringComparison.OrdinalIgnoreCase))
+                            for (int i = 1; i <= 10; i++)
                             {
-                                columnExists = true;
-                                break;
+                                string populateQuery = $"INSERT INTO field_config (FieldKey, CustomName, PositionOrder, IsHidden) VALUES ('Field{i}', 'Field {i}', {i}, 0);";
+                                using (SQLiteCommand popCmd = new SQLiteCommand(populateQuery, conn))
+                                {
+                                    popCmd.ExecuteNonQuery();
+                                }
                             }
                         }
                     }
-                    if (!columnExists)
+
+                    // Pre-populate branding templates if completely fresh
+                    string checkSettings = "SELECT COUNT(*) FROM global_settings;";
+                    using (SQLiteCommand checkSetCmd = new SQLiteCommand(checkSettings, conn))
                     {
-                        string addColumnQuery = "ALTER TABLE slips ADD COLUMN IsPrinted INTEGER DEFAULT 0;";
-                        using (SQLiteCommand cmd = new SQLiteCommand(addColumnQuery, conn))
+                        long count = (long)checkSetCmd.ExecuteScalar();
+                        if (count == 0)
                         {
-                            cmd.ExecuteNonQuery();
+                            new SQLiteCommand("INSERT INTO global_settings (SettingKey, SettingValue) VALUES ('HeaderTitle', 'UITVAL GRONDE PTY (LTD)');", conn).ExecuteNonQuery();
+                            new SQLiteCommand("INSERT INTO global_settings (SettingKey, SettingValue) VALUES ('LogoPath', '');", conn).ExecuteNonQuery();
                         }
                     }
                 }
@@ -71,45 +88,9 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                 MessageBox.Show("Database Initialization Error: " + ex.Message);
             }
         }
-        public static int GetNextSequentialSlipId()
-        {
-            // Default fallback to 1 if the table is completely empty
-            int highestId = 0;
 
-            string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
-            string connectionString = $"Data Source={dbPath};Version=3;";
-
-            try
-            {
-                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
-                {
-                    conn.Open();
-
-                    // CAST converts the Text column into numbers so that 10 is recognized as higher than 9
-                    string query = "SELECT MAX(CAST(SlipID AS INTEGER)) FROM slips;";
-
-                    using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
-                    {
-                        object result = cmd.ExecuteScalar();
-                        if (result != null && result != DBNull.Value)
-                        {
-                            highestId = Convert.ToInt32(result);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error calculating sequence tracker: " + ex.Message);
-            }
-
-            // Return the highest found ID increased by 1
-            return highestId + 1;
-        }
-
-
-        // Master function to save a brand new slip down into the SQLite file
-        public static bool SaveSlip(string bilNum, string slipId, string f1, string f2, string f3, string f4, string f5, string f6, string f7)
+        // 2. SAVE SLIP: Inserts or replaces a transaction row inside your table database tracking maps
+        public static bool SaveSlip(string bilNum, string slipId, string f1, string f2, string f3, string f4, string f5, string f6, string f7, string f8 = "", string f9 = "", string f10 = "")
         {
             try
             {
@@ -117,8 +98,8 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                 {
                     conn.Open();
                     string insertQuery = @"
-                        INSERT OR REPLACE INTO slips (BilNumber, SlipID, Field1, Field2, Field3, Field4, Field5, Field6, Field7) 
-                        VALUES (@BilNumber, @SlipID, @Field1, @Field2, @Field3, @Field4, @Field5, @Field6, @Field7);";
+                        INSERT OR REPLACE INTO slips (BilNumber, SlipID, Field1, Field2, Field3, Field4, Field5, Field6, Field7, Field8, Field9, Field10) 
+                        VALUES (@BilNumber, @SlipID, @Field1, @Field2, @Field3, @Field4, @Field5, @Field6, @Field7, @Field8, @Field9, @Field10);";
 
                     using (SQLiteCommand cmd = new SQLiteCommand(insertQuery, conn))
                     {
@@ -131,6 +112,9 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                         cmd.Parameters.AddWithValue("@Field5", f5);
                         cmd.Parameters.AddWithValue("@Field6", f6);
                         cmd.Parameters.AddWithValue("@Field7", f7);
+                        cmd.Parameters.AddWithValue("@Field8", f8);
+                        cmd.Parameters.AddWithValue("@Field9", f9);
+                        cmd.Parameters.AddWithValue("@Field10", f10);
 
                         cmd.ExecuteNonQuery();
                         return true;
@@ -139,50 +123,19 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error saving data to SQLite: " + ex.Message);
+                MessageBox.Show("Error saving slip transaction rows: " + ex.Message);
                 return false;
             }
         }
-        public static void MarkSlipAsPrinted(string bilNumber)
-        {
-            try
-            {
-                string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
-                string connectionString = $"Data Source={dbPath};Version=3;";
-
-                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
-                {
-                    conn.Open();
-                    // This flips the status flag to 1 instead of deleting the data record row!
-                    string updateQuery = "UPDATE slips SET IsPrinted = 1 WHERE BilNumber = @BilNumber;";
-                    using (SQLiteCommand cmd = new SQLiteCommand(updateQuery, conn))
-                    {
-                        cmd.Parameters.AddWithValue("@BilNumber", bilNumber);
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error updating slip status: " + ex.Message);
-            }
-        }
+        // 3. LOAD SAVED SLIPS: Pulls unprinted slips (IsPrinted = 0) and generates dashboard tile buttons
         public static void LoadSavedSlipsToDashboard(FlowLayoutPanel targetPanel)
         {
-            // Clear out any temporary tiles from layout memory before loading database rows
             targetPanel.Controls.Clear();
-
-            // Reconstruct connection properties safely matching your app assembly environment
-            string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
-            string connectionString = $"Data Source={dbPath};Version=3;";
-
             try
             {
                 using (SQLiteConnection conn = new SQLiteConnection(connectionString))
                 {
                     conn.Open();
-
-                    // ⭐ CRITICAL INTERACTIVE RULE: Only extract rows where IsPrinted is equal to 0!
                     string selectQuery = "SELECT * FROM slips WHERE IsPrinted = 0 ORDER BY CreatedAt ASC;";
 
                     using (SQLiteCommand cmd = new SQLiteCommand(selectQuery, conn))
@@ -190,7 +143,6 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                     {
                         while (reader.Read())
                         {
-                            // 1. Gather all string values out of each data row column cell
                             string bilNumber = reader["BilNumber"].ToString();
                             string slipId = reader["SlipID"].ToString();
                             string f1 = reader["Field1"].ToString();
@@ -201,10 +153,8 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                             string f6 = reader["Field6"].ToString();
                             string f7 = reader["Field7"].ToString();
 
-                            // 2. Format the layout text to display tracking info on the tile face
                             string formattedTileText = $"🚚 Reg: {(string.IsNullOrWhiteSpace(f1) ? "No Reg" : f1)}\n🆔 Slip: {slipId}\n⚖️ Tons: {(string.IsNullOrWhiteSpace(f7) ? "0" : f7)}";
 
-                            // 3. Rebuild the visual clickable dashboard tracking tile button
                             Button slipCard = new Button();
                             slipCard.Size = new Size(200, 110);
                             slipCard.BackColor = Color.LightYellow;
@@ -212,7 +162,6 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                             slipCard.Font = new Font("Arial", 10, FontStyle.Bold);
                             slipCard.Text = formattedTileText;
 
-                            // 4. Wire the click event to open the edit pop-up with all data populated
                             slipCard.Click += (sender, e) =>
                             {
                                 CreateSlip editForm = new CreateSlip();
@@ -226,22 +175,19 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
                                 editForm.txtField6.Text = f6;
                                 editForm.txtField7.Text = f7;
 
-                                editForm.Tag = slipCard; // Lock the card reference onto the form Tag
+                                editForm.Tag = slipCard;
                                 editForm.ShowDialog();
                             };
 
-                            // 5. Store the variables dictionary inside the tile's tag property data container
                             slipCard.Tag = new Dictionary<string, string>
-                    {
-                        { "SlipID", slipId }, { "BilNumber", bilNumber },
-                        { "Field1", f1 }, { "Field2", f2 }, { "Field3", f3 },
-                        { "Field4", f4 }, { "Field5", f5 }, { "Field6", f6 }, { "Field7", f7 }
-                    };
+                            {
+                                { "SlipID", slipId }, { "BilNumber", bilNumber },
+                                { "Field1", f1 }, { "Field2", f2 }, { "Field3", f3 },
+                                { "Field4", f4 }, { "Field5", f5 }, { "Field6", f6 }, { "Field7", f7 }
+                            };
 
-                            // 6. Push the tile directly onto the open flow layout panel workspace shelf
                             targetPanel.Controls.Add(slipCard);
 
-                            // 7. Update the automated sequential ID tracker to always match the next higher integer 
                             if (int.TryParse(slipId, out int parsedId))
                             {
                                 if (parsedId >= Main.NextSlipId)
@@ -255,10 +201,88 @@ namespace SlipManagement2 // ⚠️ Verify this matches your project namespace!
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error loading slips to dashboard shelf: " + ex.Message);
+                MessageBox.Show("Error rendering dashboard view grids: " + ex.Message);
             }
         }
 
+        // 4. MARK AS PRINTED: Updates status flag to 1 so the record shifts into history archives
+        public static void MarkSlipAsPrinted(string bilNumber)
+        {
+            try
+            {
+                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+                {
+                    conn.Open();
+                    string updateQuery = "UPDATE slips SET IsPrinted = 1 WHERE BilNumber = @BilNumber;";
+                    using (SQLiteCommand cmd = new SQLiteCommand(updateQuery, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@BilNumber", bilNumber);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error executing record archive flip update: " + ex.Message);
+            }
+        }
 
+        // 5. GET NEXT SEQUENTIAL ID: Scans table rows to continue numbering without duplicates
+        public static int GetNextSequentialSlipId()
+        {
+            int highestId = 0;
+            try
+            {
+                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+                {
+                    conn.Open();
+                    string query = "SELECT MAX(CAST(SlipID AS INTEGER)) FROM slips;";
+                    using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+                    {
+                        object result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                        {
+                            highestId = Convert.ToInt32(result);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error tracing serial index properties: " + ex.Message);
+            }
+            return highestId + 1;
+        }
+
+        // 6. GLOBAL CONFIG SETTINGS LOGIC HELPERS: Easy loading for company info or logos
+        public static void SaveGlobalSetting(string key, string value)
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                string query = "INSERT OR REPLACE INTO global_settings (SettingKey, SettingValue) VALUES (@Key, @Value);";
+                using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@Key", key);
+                    cmd.Parameters.AddWithValue("@Value", value);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public static string GetGlobalSetting(string key, string defaultValue)
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                string query = "SELECT SettingValue FROM global_settings WHERE SettingKey = @Key;";
+                using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@Key", key);
+                    object result = cmd.ExecuteScalar();
+                    return result != null ? result.ToString() : defaultValue;
+                }
+            }
+        }
     }
 }
