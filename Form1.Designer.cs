@@ -37,6 +37,7 @@ namespace SlipManagement2
             this.btnOpenSettings = new System.Windows.Forms.Button();
             this.btnSlipHistory = new System.Windows.Forms.Button();
             this.btnExit = new System.Windows.Forms.Button();
+            this.btnCustomizeSlips = new System.Windows.Forms.Button();
             this.flpSlips.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -115,11 +116,24 @@ namespace SlipManagement2
             this.btnExit.UseVisualStyleBackColor = false;
             this.btnExit.Click += new System.EventHandler(this.btnExit_Click);
             // 
+            // btnCustomizeSlips
+            // 
+            this.btnCustomizeSlips.BackColor = System.Drawing.Color.Gainsboro;
+            this.btnCustomizeSlips.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnCustomizeSlips.Location = new System.Drawing.Point(683, 15);
+            this.btnCustomizeSlips.Name = "btnCustomizeSlips";
+            this.btnCustomizeSlips.Size = new System.Drawing.Size(113, 45);
+            this.btnCustomizeSlips.TabIndex = 4;
+            this.btnCustomizeSlips.Text = "⚙️ Customize Slips";
+            this.btnCustomizeSlips.UseVisualStyleBackColor = false;
+            this.btnCustomizeSlips.Click += new System.EventHandler(this.btnCustomizeSlips_Click);
+            // 
             // Main
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(120F, 120F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             this.ClientSize = new System.Drawing.Size(1220, 634);
+            this.Controls.Add(this.btnCustomizeSlips);
             this.Controls.Add(this.btnSlipHistory);
             this.Controls.Add(this.btnExit);
             this.Controls.Add(this.flpSlips);
@@ -145,6 +159,7 @@ namespace SlipManagement2
         private System.Windows.Forms.Button btnOpenSettings;
         private System.Windows.Forms.Button btnSlipHistory;
         private System.Windows.Forms.Button btnExit;
+        private System.Windows.Forms.Button btnCustomizeSlips;
     }
 }
 

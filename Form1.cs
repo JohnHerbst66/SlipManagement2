@@ -52,5 +52,11 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
         {
             Application.Exit();
         }
+
+        private void btnCustomizeSlips_Click(object sender, EventArgs e)
+        {
+            CustomizeSlipsForm options = new CustomizeSlipsForm();
+            options.ShowDialog();
+        }
     }
 }

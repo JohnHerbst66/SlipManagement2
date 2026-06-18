@@ -52,6 +52,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CostomizeSlipsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="CostomizeSlipsForm.Designer.cs">
+      <DependentUpon>CostomizeSlipsForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="CreateSlip.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -85,6 +91,9 @@
     <Compile Include="SlipsHistoryForm.Designer.cs">
       <DependentUpon>SlipsHistoryForm.cs</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="CostomizeSlipsForm.resx">
+      <DependentUpon>CostomizeSlipsForm.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="CreateSlip.resx">
       <DependentUpon>CreateSlip.cs</DependentUpon>
     </EmbeddedResource>

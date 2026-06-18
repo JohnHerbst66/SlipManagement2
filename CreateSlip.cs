@@ -10,6 +10,40 @@ namespace SlipManagement2
         public CreateSlip()
         {
             InitializeComponent();
+            // Add this routine right inside your CreateSlip constructor method block:
+            var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
+
+            // Clean structural loop mapping rules dynamically over your 7 active field slots
+            for (int i = 1; i <= 7; i++)
+            {
+                string key = "Field" + i;
+                if (fieldConfigs.ContainsKey(key))
+                {
+                    var cfg = fieldConfigs[key];
+
+                    // Find the visual controls sitting on your form canvas dynamically by name strings
+                    Label targetLabel = this.Controls.Find("lblField" + i, true)[0] as Label;
+                    TextBox targetTextBox = this.Controls.Find("txtField" + i, true)[0] as TextBox;
+
+                    if (targetLabel != null && targetTextBox != null)
+                    {
+                        if (cfg.IsHidden)
+                        {
+                            // 1. Hide them completely from view if disabled by user settings
+                            targetLabel.Visible = false;
+                            targetTextBox.Visible = false;
+                        }
+                        else
+                        {
+                            // 2. Otherwise, keep them visible and overwrite text to show custom names!
+                            targetLabel.Visible = true;
+                            targetTextBox.Visible = true;
+                            targetLabel.Text = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
+                        }
+                    }
+                }
+            }
+
 
             // Auto-fill configuration properties if launching a new entry sequence
             if (this.Tag == null)
@@ -102,19 +136,33 @@ namespace SlipManagement2
         }
 
         private void btnPrint_Click(object sender, EventArgs e)
+        
         {
             PrintSlipPreview preview = new PrintSlipPreview();
 
+            // 1. Map the stationary header identifiers
             preview.lblSlipIdOutput.Text = txtSlipID.Text;
             preview.lblBilNumberOutput.Text = txtBilNumber.Text;
-            preview.lblOutput1.Text = txtField1.Text;
-            preview.lblOutput2.Text = txtField2.Text;
-            preview.lblOutput3.Text = txtField3.Text;
-            preview.lblOutput4.Text = txtField4.Text;
-            preview.lblOutput5.Text = txtField5.Text;
-            preview.lblOutput6.Text = txtField6.Text;
-            preview.lblOutput7.Text = txtField7.Text;
 
+            // 2. Map all 10 text inputs dynamically to your preview labels in a single loop
+            // 🟢 FIXED ARRAY-SAFE PRINT TRANSMISSION LOOP
+            for (int i = 1; i <= 10; i++)
+            {
+                // 1. Fetch the control arrays using the Find function
+                Control[] textboxMatches = this.Controls.Find("txtField" + i, true);
+                Control[] labelMatches = preview.Controls.Find("lblOutput" + i, true);
+
+                // 2. Extract the single control safely if an item was found in the list array index [0]
+                TextBox sourceTextBox = textboxMatches.Length > 0 ? textboxMatches[0] as TextBox : null;
+                Label targetLabel = labelMatches.Length > 0 ? labelMatches[0] as Label : null;
+
+                if (sourceTextBox != null && targetLabel != null)
+                {
+                    targetLabel.Text = sourceTextBox.Text;
+                }
+            }
+
+            // 3. Open up your dynamically populated validation preview screen
             DialogResult result = preview.ShowDialog();
 
             if (result == DialogResult.OK)
@@ -133,6 +181,7 @@ namespace SlipManagement2
                 this.Close();
             }
         }
+
 
         // Paste these three helper routines to satisfy the background designer file errors:
         private void btnSave_Click_1(object sender, EventArgs e)

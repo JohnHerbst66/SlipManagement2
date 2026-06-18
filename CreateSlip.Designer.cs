@@ -53,9 +53,9 @@
             this.lblField8 = new System.Windows.Forms.Label();
             this.lblField9 = new System.Windows.Forms.Label();
             this.lblField10 = new System.Windows.Forms.Label();
-            this.textBox1 = new System.Windows.Forms.TextBox();
-            this.textBox2 = new System.Windows.Forms.TextBox();
-            this.textBox3 = new System.Windows.Forms.TextBox();
+            this.txtField8 = new System.Windows.Forms.TextBox();
+            this.txtField9 = new System.Windows.Forms.TextBox();
+            this.txtField10 = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
             // label1
@@ -286,35 +286,35 @@
             this.lblField10.TabIndex = 24;
             this.lblField10.Text = "Remarks:";
             // 
-            // textBox1
+            // txtField8
             // 
-            this.textBox1.Location = new System.Drawing.Point(584, 305);
-            this.textBox1.Name = "textBox1";
-            this.textBox1.Size = new System.Drawing.Size(231, 22);
-            this.textBox1.TabIndex = 25;
+            this.txtField8.Location = new System.Drawing.Point(582, 224);
+            this.txtField8.Name = "txtField8";
+            this.txtField8.Size = new System.Drawing.Size(231, 22);
+            this.txtField8.TabIndex = 25;
             // 
-            // textBox2
+            // txtField9
             // 
-            this.textBox2.Location = new System.Drawing.Point(584, 265);
-            this.textBox2.Name = "textBox2";
-            this.textBox2.Size = new System.Drawing.Size(231, 22);
-            this.textBox2.TabIndex = 26;
+            this.txtField9.Location = new System.Drawing.Point(582, 265);
+            this.txtField9.Name = "txtField9";
+            this.txtField9.Size = new System.Drawing.Size(231, 22);
+            this.txtField9.TabIndex = 26;
             // 
-            // textBox3
+            // txtField10
             // 
-            this.textBox3.Location = new System.Drawing.Point(584, 224);
-            this.textBox3.Name = "textBox3";
-            this.textBox3.Size = new System.Drawing.Size(231, 22);
-            this.textBox3.TabIndex = 27;
+            this.txtField10.Location = new System.Drawing.Point(582, 305);
+            this.txtField10.Name = "txtField10";
+            this.txtField10.Size = new System.Drawing.Size(231, 22);
+            this.txtField10.TabIndex = 27;
             // 
             // CreateSlip
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(960, 625);
-            this.Controls.Add(this.textBox3);
-            this.Controls.Add(this.textBox2);
-            this.Controls.Add(this.textBox1);
+            this.Controls.Add(this.txtField10);
+            this.Controls.Add(this.txtField9);
+            this.Controls.Add(this.txtField8);
             this.Controls.Add(this.lblField10);
             this.Controls.Add(this.lblField9);
             this.Controls.Add(this.lblField8);
@@ -374,8 +374,8 @@
         public System.Windows.Forms.Label lblField8;
         public System.Windows.Forms.Label lblField9;
         public System.Windows.Forms.Label lblField10;
-        public System.Windows.Forms.TextBox textBox1;
-        public System.Windows.Forms.TextBox textBox2;
-        public System.Windows.Forms.TextBox textBox3;
+        public System.Windows.Forms.TextBox txtField8;
+        public System.Windows.Forms.TextBox txtField9;
+        public System.Windows.Forms.TextBox txtField10;
     }
 }

@@ -52,6 +52,26 @@ namespace SlipManagement2
                             DataTable dt = new DataTable();
                             adapter.Fill(dt);
                             dataGridView1.DataSource = dt;
+                            // Add this block inside your RefreshDataGrid method to re-label data table headings:
+                            var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
+                            foreach (var cfg in fieldConfigs)
+                            {
+                                // If column name exists inside your grid view structure, swap title text string
+                                if (dataGridView1.Columns.Contains(cfg.Key))
+                                {
+                                    if (cfg.Value.IsHidden)
+                                    {
+                                        // Optional: Hide column out of history spreadsheet view if disabled
+                                        dataGridView1.Columns[cfg.Key].Visible = false;
+                                    }
+                                    else
+                                    {
+                                        dataGridView1.Columns[cfg.Key].Visible = true;
+                                        dataGridView1.Columns[cfg.Key].HeaderText = cfg.Value.CustomName;
+                                    }
+                                }
+                            }
+
                         }
                     }
                 }

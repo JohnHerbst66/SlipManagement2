@@ -21,38 +21,65 @@ namespace SlipManagement2
                 {
                     conn.Open();
 
-                    // Main slips table updated to hold up to 10 pre-allocated structural columns
+                    // 1. Maintain your base tables checks
                     string createSlipsTable = @"
-                        CREATE TABLE IF NOT EXISTS slips (
-                            BilNumber TEXT PRIMARY KEY,
-                            SlipID TEXT,
-                            Field1 TEXT, Field2 TEXT, Field3 TEXT, Field4 TEXT, Field5 TEXT,
-                            Field6 TEXT, Field7 TEXT, Field8 TEXT, Field9 TEXT, Field10 TEXT,
-                            IsPrinted INTEGER DEFAULT 0,
-                            CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-                        );";
+                CREATE TABLE IF NOT EXISTS slips (
+                    BilNumber TEXT PRIMARY KEY,
+                    SlipID TEXT,
+                    Field1 TEXT, Field2 TEXT, Field3 TEXT, Field4 TEXT, Field5 TEXT,
+                    Field6 TEXT, Field7 TEXT
+                );";
 
-                    // Dynamic templates custom mapping definitions data table
                     string createConfigTable = @"
-                        CREATE TABLE IF NOT EXISTS field_config (
-                            FieldKey TEXT PRIMARY KEY, -- 'Field1' through 'Field10'
-                            CustomName TEXT DEFAULT '',
-                            PositionOrder INTEGER DEFAULT 1,
-                            IsHidden INTEGER DEFAULT 0 -- 0 = Visible, 1 = Hidden
-                        );";
+                CREATE TABLE IF NOT EXISTS field_config (
+                    FieldKey TEXT PRIMARY KEY,
+                    CustomName TEXT DEFAULT '',
+                    PositionOrder INTEGER DEFAULT 1,
+                    IsHidden INTEGER DEFAULT 0
+                );";
 
-                    // White-label corporate metadata settings table
                     string createSettingsTable = @"
-                        CREATE TABLE IF NOT EXISTS global_settings (
-                            SettingKey TEXT PRIMARY KEY,
-                            SettingValue TEXT DEFAULT ''
-                        );";
+                CREATE TABLE IF NOT EXISTS global_settings (
+                    SettingKey TEXT PRIMARY KEY,
+                    SettingValue TEXT DEFAULT ''
+                );";
 
                     using (SQLiteCommand cmd = new SQLiteCommand(createSlipsTable, conn)) { cmd.ExecuteNonQuery(); }
                     using (SQLiteCommand cmd = new SQLiteCommand(createConfigTable, conn)) { cmd.ExecuteNonQuery(); }
                     using (SQLiteCommand cmd = new SQLiteCommand(createSettingsTable, conn)) { cmd.ExecuteNonQuery(); }
 
-                    // Pre-populate the 10 customizable layout slots on initial setup execution
+                    // 2. ⭐ THE INSTANT FIX: Scan the schema to inject columns Field8, Field9, and Field10 if missing
+                    for (int i = 8; i <= 10; i++)
+                    {
+                        bool columnExists = false;
+                        string columnName = "Field" + i;
+                        string checkColumnQuery = "PRAGMA table_info(slips);";
+
+                        using (SQLiteCommand checkCmd = new SQLiteCommand(checkColumnQuery, conn))
+                        using (SQLiteDataReader reader = checkCmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                if (reader["name"].ToString().Equals(columnName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    columnExists = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // If your database file is missing Field8, Field9, or Field10, safely append them!
+                        if (!columnExists)
+                        {
+                            string alterQuery = $"ALTER TABLE slips ADD COLUMN {columnName} TEXT DEFAULT '';";
+                            using (SQLiteCommand alterCmd = new SQLiteCommand(alterQuery, conn))
+                            {
+                                alterCmd.ExecuteNonQuery();
+                            }
+                        }
+                    }
+
+                    // 3. Pre-populate the configuration template fields dictionary maps if fresh
                     string checkFresh = "SELECT COUNT(*) FROM field_config;";
                     using (SQLiteCommand checkCmd = new SQLiteCommand(checkFresh, conn))
                     {
@@ -70,7 +97,7 @@ namespace SlipManagement2
                         }
                     }
 
-                    // Pre-populate branding templates if completely fresh
+                    // 4. Pre-populate global configuration template defaults if fresh
                     string checkSettings = "SELECT COUNT(*) FROM global_settings;";
                     using (SQLiteCommand checkSetCmd = new SQLiteCommand(checkSettings, conn))
                     {
@@ -85,9 +112,10 @@ namespace SlipManagement2
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Database Initialization Error: " + ex.Message);
+                MessageBox.Show("Database Schema Upgrade Error: " + ex.Message);
             }
         }
+
 
         // 2. SAVE SLIP: Inserts or replaces a transaction row inside your table database tracking maps
         public static bool SaveSlip(string bilNum, string slipId, string f1, string f2, string f3, string f4, string f5, string f6, string f7, string f8 = "", string f9 = "", string f10 = "")
@@ -283,6 +311,53 @@ namespace SlipManagement2
                     return result != null ? result.ToString() : defaultValue;
                 }
             }
+        } // 🟢 This closes GetGlobalSetting cleanly
+
+        // ===================================================================
+        // HELPER MODULES & CONFIGURATION DICTIONARIES
+        // ===================================================================
+
+        // Clean container class to store field state attributes
+        public class FieldLayoutSettings
+        {
+            public string CustomName { get; set; }
+            public int PositionOrder { get; set; }
+            public bool IsHidden { get; set; }
         }
-    }
-}
+
+        // Pulls dynamic label definitions directly from your SQLite configurations
+        public static Dictionary<string, FieldLayoutSettings> GetActiveFieldConfigurations()
+        {
+            var configMap = new Dictionary<string, FieldLayoutSettings>();
+            string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
+            string connectionString = $"Data Source={dbPath};Version=3;";
+
+            try
+            {
+                using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+                {
+                    conn.Open();
+                    string query = "SELECT FieldKey, CustomName, PositionOrder, IsHidden FROM field_config;";
+                    using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+                    using (SQLiteDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            configMap.Add(reader["FieldKey"].ToString(), new FieldLayoutSettings
+                            {
+                                CustomName = reader["CustomName"].ToString(),
+                                PositionOrder = Convert.ToInt32(reader["PositionOrder"]),
+                                IsHidden = Convert.ToInt32(reader["IsHidden"]) == 1
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error mapping system layout properties: " + ex.Message);
+            }
+            return configMap;
+        }
+    } // This closes the DatabaseManager class
+} // This closes the SlipManagement2 namespace

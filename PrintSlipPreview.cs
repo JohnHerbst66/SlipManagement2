@@ -13,6 +13,82 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
         public PrintSlipPreview()
         {
             InitializeComponent();
+            // 🟢 FIXED MARGIN ENGINE: Forces labels to render below the black line control
+            var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
+
+            // Change 'panelDivider' to the exact name of your black line control!
+            // We add 15 pixels of clean padding whitespace below it.
+            int nextYPosition = panelDivider.Bottom + 15;
+            int lineSpacingGap = 25;
+
+            for (int i = 1; i <= 6; i++)
+            {
+                string key = "Field" + i;
+                if (fieldConfigs.ContainsKey(key))
+                {
+                    var cfg = fieldConfigs[key];
+
+                    // 1. Fetch the control arrays safely using the Find function
+                    Control[] labelMatches = this.Controls.Find("lblSlipField" + i, true);
+                    Control[] outputMatches = this.Controls.Find("lblOutput" + i, true);
+
+                    // Extract the single label if an item was found in the list index
+                    Label descriptionLabel = labelMatches.Length > 0 ? labelMatches[0] as Label : null;
+                    Label outputValueLabel = outputMatches.Length > 0 ? outputMatches[0] as Label : null;
+
+                    if (descriptionLabel != null && outputValueLabel != null)
+                    {
+                        if (cfg.IsHidden)
+                        {
+                            descriptionLabel.Visible = false;
+                            outputValueLabel.Visible = false;
+                        }
+                        else
+                        {
+                            descriptionLabel.Visible = true;
+                            outputValueLabel.Visible = true;
+
+                            descriptionLabel.Text = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
+
+                            descriptionLabel.Top = nextYPosition;
+                            outputValueLabel.Top = nextYPosition;
+
+                            nextYPosition += lineSpacingGap;
+                        }
+                    }
+                }
+            }
+
+            // 2. Handle your Net Weight metric field box safely (Field 7)
+            if (fieldConfigs.ContainsKey("Field7"))
+            {
+                var cfg7 = fieldConfigs["Field7"];
+                Control[] label7Matches = this.Controls.Find("lblSlipField7", true);
+                Control[] output7Matches = this.Controls.Find("lblOutput7", true);
+
+                Label descriptionLabel7 = label7Matches.Length > 0 ? label7Matches[0] as Label : null;
+                Label outputValueLabel7 = output7Matches.Length > 0 ? output7Matches[0] as Label : null;
+
+                if (descriptionLabel7 != null && outputValueLabel7 != null)
+                {
+                    if (cfg7.IsHidden)
+                    {
+                        descriptionLabel7.Visible = false;
+                        outputValueLabel7.Visible = false;
+                    }
+                    else
+                    {
+                        descriptionLabel7.Visible = true;
+                        outputValueLabel7.Visible = true;
+                        descriptionLabel7.Text = string.IsNullOrWhiteSpace(cfg7.CustomName) ? "Tons:" : cfg7.CustomName;
+
+                        nextYPosition += 15;
+                        descriptionLabel7.Top = nextYPosition;
+                        outputValueLabel7.Top = nextYPosition;
+                    }
+                }
+            }
+
 
             // Re-configure windows frame appearance properties programmatically 
             this.Size = new Size(500, 680);
@@ -107,21 +183,38 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
                     g.DrawString("------------------------------------------", regularFont, Brushes.Black, startX, startY);
                     startY += gap * 1.2f;
 
-                    // 2. Data Alignment Column Stack (Perfect column lining via ,-15 padding rule)
-                    g.DrawString($"{lblSlipField1.Text,-15} {lblOutput1.Text}", boldFont, Brushes.Black, startX, startY); startY += gap;
-                    g.DrawString($"{lblSlipField2.Text,-15} {lblOutput2.Text}", regularFont, Brushes.Black, startX, startY); startY += gap;
-                    g.DrawString($"{lblSlipField3.Text,-15} {lblOutput3.Text}", regularFont, Brushes.Black, startX, startY); startY += gap;
-                    g.DrawString($"{lblSlipField4.Text,-15} {lblOutput4.Text}", regularFont, Brushes.Black, startX, startY); startY += gap;
-                    g.DrawString($"{lblSlipField5.Text,-15} {lblOutput5.Text}", regularFont, Brushes.Black, startX, startY); startY += gap;
-                    g.DrawString($"{lblSlipField6.Text,-15} {lblOutput6.Text}", regularFont, Brushes.Black, startX, startY); startY += gap * 1.5f;
+                    // Replace the old block where you called DrawString for Field1 to 7 with this loop:
+                    var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
 
-                    // 3. Prominent Highlighted Net Weight Section
-                    g.DrawString("------------------------------------------", regularFont, Brushes.Black, startX, startY);
-                    startY += gap * 0.5f;
-                    g.DrawString($"{lblSlipField7.Text} {lblOutput7.Text} t", giantFont, Brushes.Black, startX, startY);
-                    startY += gap * 1.5f;
-                    g.DrawString("------------------------------------------", regularFont, Brushes.Black, startX, startY);
-                    startY += gap * 2f;
+                    for (int i = 1; i <= 6; i++)
+                    {
+                        string key = "Field" + i;
+                        if (fieldConfigs.ContainsKey(key))
+                        {
+                            var cfg = fieldConfigs[key];
+
+                            // Skip printing completely if the configuration status is marked hidden!
+                            if (cfg.IsHidden) continue;
+
+                            // Fetch values dynamically from your public display labels
+                            Label outputLabel = this.Controls.Find("lblOutput" + i, true)[0] as Label;
+                            string displayValue = outputLabel != null ? outputLabel.Text : "";
+                            string cleanHeaderName = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
+
+                            // Print using clean spacing padding alignment format blocks
+                            g.DrawString($"{cleanHeaderName,-15} {displayValue}", regularFont, Brushes.Black, startX, startY);
+                            startY += gap;
+                        }
+                    }
+
+                    // Draw a dynamic bold line block for your weight category metric (Field 7)
+                    if (fieldConfigs.ContainsKey("Field7") && !fieldConfigs["Field7"].IsHidden)
+                    {
+                        startY += gap;
+                        string f7Header = string.IsNullOrWhiteSpace(fieldConfigs["Field7"].CustomName) ? "Tons:" : fieldConfigs["Field7"].CustomName;
+                        g.DrawString($"{f7Header} {lblOutput7.Text} t", giantFont, Brushes.Black, startX, startY);
+                        startY += gap * 2;
+                    }
 
                     // 4. Verification Footer Trace line
                     g.DrawString("Operator Sign: ___________________________", regularFont, Brushes.Black, startX, startY);
