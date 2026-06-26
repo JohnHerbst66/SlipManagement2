@@ -1,193 +1,275 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Windows.Forms;
 
 namespace SlipManagement2
 {
     public partial class CreateSlip : Form
     {
+        public int ExistingSlipId = 0;
+
+        // Tracks which fields are shown as ComboBoxes (lookup fields) instead of TextBoxes
+        private readonly Dictionary<string, ComboBox> _lookupBoxes = new Dictionary<string, ComboBox>();
+
         public CreateSlip()
         {
             InitializeComponent();
-            // Add this routine right inside your CreateSlip constructor method block:
+
             var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
 
-            // Clean structural loop mapping rules dynamically over your 7 active field slots
-            for (int i = 1; i <= 7; i++)
+            for (int i = 1; i <= 10; i++)
             {
                 string key = "Field" + i;
-                if (fieldConfigs.ContainsKey(key))
+                if (!fieldConfigs.ContainsKey(key)) continue;
+
+                var cfg = fieldConfigs[key];
+                var labelMatches = this.Controls.Find("lblField" + i, true);
+                var boxMatches   = this.Controls.Find("txtField" + i, true);
+
+                if (labelMatches.Length == 0 || boxMatches.Length == 0) continue;
+                if (!(labelMatches[0] is Label targetLabel) || !(boxMatches[0] is TextBox targetBox)) continue;
+
+                if (cfg.IsHidden)
                 {
-                    var cfg = fieldConfigs[key];
+                    targetLabel.Visible = false;
+                    targetBox.Visible   = false;
+                    continue;
+                }
 
-                    // Find the visual controls sitting on your form canvas dynamically by name strings
-                    Label targetLabel = this.Controls.Find("lblField" + i, true)[0] as Label;
-                    TextBox targetTextBox = this.Controls.Find("txtField" + i, true)[0] as TextBox;
+                targetLabel.Visible = true;
+                targetLabel.Text = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
 
-                    if (targetLabel != null && targetTextBox != null)
+                // Field7 (Tons) is always a plain TextBox — numeric entry only, no lookup
+                if (!string.IsNullOrEmpty(cfg.LookupTable) && i != 7)
+                {
+                    // Overlay a ComboBox at the same position as the TextBox
+                    targetBox.Visible = false;
+
+                    var combo = new ComboBox
                     {
-                        if (cfg.IsHidden)
-                        {
-                            // 1. Hide them completely from view if disabled by user settings
-                            targetLabel.Visible = false;
-                            targetTextBox.Visible = false;
-                        }
-                        else
-                        {
-                            // 2. Otherwise, keep them visible and overwrite text to show custom names!
-                            targetLabel.Visible = true;
-                            targetTextBox.Visible = true;
-                            targetLabel.Text = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
-                        }
-                    }
+                        Name               = "cboField" + i,
+                        Location           = targetBox.Location,
+                        Size               = new Size(targetBox.Width, 24),
+                        DropDownStyle      = ComboBoxStyle.DropDown,
+                        AutoCompleteMode   = AutoCompleteMode.SuggestAppend,
+                        AutoCompleteSource = AutoCompleteSource.ListItems,
+                        Font               = targetBox.Font,
+                    };
+
+                    var values = DatabaseManager.GetLookupValues(cfg.LookupTable);
+                    combo.Items.AddRange(values.ToArray());
+
+                    string tableName = cfg.LookupTable;
+                    combo.Leave += (s, e) =>
+                    {
+                        string val = combo.Text.Trim();
+                        if (!string.IsNullOrEmpty(val))
+                            DatabaseManager.SaveLookupValue(tableName, val);
+                    };
+
+                    Control parent = targetBox.Parent ?? this;
+                    parent.Controls.Add(combo);
+                    combo.BringToFront();
+
+                    _lookupBoxes[key] = combo;
+                }
+                else
+                {
+                    targetBox.Visible = true;
                 }
             }
 
+            txtBilNumber.Text = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            txtSlipID.Text    = "Auto-assigned";
 
-            // Auto-fill configuration properties if launching a new entry sequence
-            if (this.Tag == null)
+            txtField7.TextChanged += (s, e) => ValidatePrintButton();
+            ValidatePrintButton();
+        }
+
+        // Sets a field value regardless of whether it uses a ComboBox or TextBox.
+        // Call this instead of directly accessing txtField{n} from outside the form.
+        public void SetFieldValue(int fieldNumber, string value)
+        {
+            string key = "Field" + fieldNumber;
+            if (_lookupBoxes.TryGetValue(key, out ComboBox cb))
+                cb.Text = value;
+            else
             {
-                txtSlipID.Text = Main.NextSlipId.ToString();
-                txtBilNumber.Text = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var matches = this.Controls.Find("txtField" + fieldNumber, true);
+                if (matches.Length > 0 && matches[0] is TextBox tb)
+                    tb.Text = value;
             }
         }
+
+        private void ValidatePrintButton()
+        {
+            if (!txtField7.Visible)
+            {
+                btnPrint.Enabled = true;
+                return;
+            }
+            string tons = txtField7.Text.Trim().Replace(',', '.');
+            btnPrint.Enabled = tons.Length > 0 &&
+                               double.TryParse(tons, NumberStyles.Any, CultureInfo.InvariantCulture, out _);
+        }
+
+        private static string NormalizeTons(string raw) => raw.Trim().Replace(',', '.');
 
         private void btnCancel_Click(object sender, EventArgs e)
         {
+            if (ExistingSlipId == 0)
+            {
+                this.Close();
+                return;
+            }
+
+            var choice = MessageBox.Show(
+                "This slip has been saved (Status: Unprinted).\n\n" +
+                "YES  — Void this slip (enter a reason)\n" +
+                "NO   — Close without voiding (slip stays on the dashboard)\n" +
+                "CANCEL — Go back to editing",
+                "Void or Close?",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question);
+
+            if (choice == DialogResult.Cancel) return;
+
+            if (choice == DialogResult.Yes)
+            {
+                string reason = PromptForVoidReason();
+                if (reason == null) return;
+
+                DatabaseManager.VoidSlip(ExistingSlipId, reason);
+
+                if (this.Tag is Button cardToRemove)
+                {
+                    Main mainPage = (Main)Application.OpenForms["Main"];
+                    mainPage?.flpSlips.Controls.Remove(cardToRemove);
+                    cardToRemove?.Dispose();
+                }
+            }
+
             this.Close();
+        }
+
+        private string PromptForVoidReason()
+        {
+            using (Form dialog = new Form
+            {
+                Width  = 360, Height = 165,
+                Text   = "Void Reason",
+                StartPosition   = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false, MinimizeBox = false
+            })
+            {
+                var lbl    = new Label  { Text = "Reason (max 20 characters):", Left = 12, Top = 16, AutoSize = true };
+                var txt    = new TextBox { Left = 12, Top = 38, Width = 316, MaxLength = 20 };
+                var ok     = new Button { Text = "Void Slip", Left = 75,  Top = 80, Width = 105,
+                                          BackColor = Color.Tomato, FlatStyle = FlatStyle.Flat,
+                                          DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", Left = 195, Top = 80, Width = 80,
+                                          DialogResult = DialogResult.Cancel };
+
+                dialog.Controls.AddRange(new Control[] { lbl, txt, ok, cancel });
+                dialog.AcceptButton = ok;
+                dialog.CancelButton = cancel;
+
+                if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(txt.Text))
+                    return txt.Text.Trim();
+                return null;
+            }
         }
 
         private void btnSave_Click(object sender, EventArgs e)
-        
         {
-            string bilNumber = txtBilNumber.Text;
-            string slipId = txtSlipID.Text;
+            string[] fields = CollectFields();
 
-            // 1. Create a dynamic string array to store all 10 field values safely
-            string[] fields = new string[10];
-            for (int i = 1; i <= 10; i++)
+            if (string.IsNullOrWhiteSpace(fields[0]))
             {
-                Control[] matches = this.Controls.Find("txtField" + i, true);
-                fields[i - 1] = (matches.Length > 0 && matches[0] is TextBox tb) ? tb.Text : "";
+                MessageBox.Show("Truck Reg (Field 1) is required before saving.",
+                    "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
 
-            // 2. SAVE SECURELY TO SQLITE DATABASE WITH ALL 10 FIELD ARRAYS
-            bool databaseSaved = DatabaseManager.SaveSlip(
-                bilNumber, slipId,
-                fields[0], fields[1], fields[2], fields[3], fields[4],
-                fields[5], fields[6], fields[7], fields[8], fields[9]
-            );
+            fields[6] = NormalizeTons(fields[6]);
 
-            if (!databaseSaved) return;
-
-            // 3. Setup text display metrics for your visible dashboard tracking tile card (Field 1 and Field 7)
-            string regDisplay = string.IsNullOrWhiteSpace(fields[0]) ? "No Reg" : fields[0];
-            string tonsDisplay = string.IsNullOrWhiteSpace(fields[6]) ? "0" : fields[6];
-            string formattedTileText = $"🚚 Reg: {regDisplay}\n🆔 Slip: {slipId}\n⚖️ Tons: {tonsDisplay}";
-
-            if (this.Tag is Button existingCard)
+            if (ExistingSlipId == 0)
             {
-                // EDIT MODE: Update existing dashboard card face text
-                existingCard.Text = formattedTileText;
+                ExistingSlipId = DatabaseManager.InsertSlip(
+                    txtBilNumber.Text,
+                    fields[0], fields[1], fields[2], fields[3], fields[4],
+                    fields[5], fields[6], fields[7], fields[8], fields[9]);
 
-                // Synchronize all 10 fields within the card tile container memory dictionary cache
-                if (existingCard.Tag is Dictionary<string, string> savedData)
-                {
-                    for (int i = 1; i <= 10; i++)
-                    {
-                        savedData["Field" + i] = fields[i - 1];
-                    }
-                }
+                if (ExistingSlipId <= 0) return;
+                txtSlipID.Text = ExistingSlipId.ToString();
             }
             else
             {
-                // NEW MODE: Build a brand new yellow workspace tracking card tile
-                Button slipCard = new Button();
-                slipCard.Size = new Size(200, 110);
-                slipCard.BackColor = Color.LightYellow;
-                slipCard.FlatStyle = FlatStyle.Flat;
-                slipCard.Font = new Font("Arial", 10, FontStyle.Bold);
-                slipCard.Text = formattedTileText;
-                slipCard.Click += SlipCard_Click;
-
-                // Initialize and fill the core dictionary container data properties block
-                var memoryCache = new Dictionary<string, string>
-        {
-            { "SlipID", slipId },
-            { "BilNumber", bilNumber }
-        };
-
-                for (int i = 1; i <= 10; i++)
-                {
-                    memoryCache.Add("Field" + i, fields[i - 1]);
-                }
-                slipCard.Tag = memoryCache;
-
-                // Mount the tile directly to your main workspace panel container
-                Main mainPage = (Main)Application.OpenForms["Main"];
-                if (mainPage != null)
-                {
-                    mainPage.flpSlips.Controls.Add(slipCard);
-                }
-
-                Main.NextSlipId++;
+                if (!DatabaseManager.UpdateSlipFields(
+                    ExistingSlipId,
+                    fields[0], fields[1], fields[2], fields[3], fields[4],
+                    fields[5], fields[6], fields[7], fields[8], fields[9]))
+                    return;
             }
 
+            UpdateOrCreateTile(fields);
             this.Close();
         }
 
-
         private void SlipCard_Click(object sender, EventArgs e)
-        
         {
             Button clickedCard = (Button)sender;
-            if (clickedCard.Tag is Dictionary<string, string> savedData)
-            {
-                CreateSlip editForm = new CreateSlip();
-                editForm.txtSlipID.Text = savedData["SlipID"];
-                editForm.txtBilNumber.Text = savedData["BilNumber"];
+            if (!(clickedCard.Tag is Dictionary<string, string> savedData)) return;
 
-                // ⭐ LOOP TO LOAD ALL 10 POPULATED FIELDS BACK INTO TEXTBOX CONTROLS
-                for (int i = 1; i <= 10; i++)
-                {
-                    Control[] txtMatches = editForm.Controls.Find("txtField" + i, true);
-                    if (txtMatches.Length > 0 && txtMatches[0] is TextBox tb && savedData.ContainsKey("Field" + i))
-                    {
-                        tb.Text = savedData["Field" + i];
-                    }
-                }
+            CreateSlip editForm = new CreateSlip();
+            editForm.ExistingSlipId    = int.Parse(savedData["SlipID"]);
+            editForm.txtSlipID.Text    = savedData["SlipID"];
+            editForm.txtBilNumber.Text = savedData["BillNumber"];
 
-                editForm.Tag = clickedCard;
-                editForm.ShowDialog();
-            }
+            for (int i = 1; i <= 10; i++)
+                editForm.SetFieldValue(i, savedData.ContainsKey("Field" + i) ? savedData["Field" + i] : "");
+
+            editForm.Tag = clickedCard;
+            editForm.ShowDialog();
         }
 
         private void btnPrint_Click(object sender, EventArgs e)
-        
         {
-            // 1. Pack all 10 entry textbox strings into a data dictionary package
-            var printPackage = new Dictionary<string, string>
-    {
-        { "SlipID", txtSlipID.Text },
-        { "BilNumber", txtBilNumber.Text }
-    };
+            string[] fields = CollectFields();
+            fields[6] = NormalizeTons(fields[6]);
 
-            for (int i = 1; i <= 10; i++)
+            if (ExistingSlipId == 0)
             {
-                Control[] txtMatches = this.Controls.Find("txtField" + i, true);
-                string textValue = (txtMatches.Length > 0 && txtMatches[0] is TextBox tb) ? tb.Text : "";
-                printPackage.Add("Field" + i, textValue);
+                ExistingSlipId = DatabaseManager.InsertSlip(
+                    txtBilNumber.Text,
+                    fields[0], fields[1], fields[2], fields[3], fields[4],
+                    fields[5], fields[6], fields[7], fields[8], fields[9]);
+
+                if (ExistingSlipId <= 0) return;
+                txtSlipID.Text = ExistingSlipId.ToString();
             }
 
-            // 2. ROUTE STRAIGHT INTO YOUR UNBREAKABLE PRINT ENGINE CLASS!
-            SlipPrintEngine.ExecutePrintJob(printPackage);
+            var printPackage = new Dictionary<string, string>
+            {
+                { "SlipID",     txtSlipID.Text },
+                { "BillNumber", txtBilNumber.Text },
+            };
+            for (int i = 1; i <= 10; i++)
+                printPackage.Add("Field" + i, fields[i - 1]);
 
-            // 3. Mark row as printed and clear the dashboard tile card
+            using (var preview = new PrintSlipPreview(printPackage))
+            {
+                if (preview.ShowDialog(this) != DialogResult.OK)
+                    return;
+            }
+
+            DatabaseManager.MarkSlipAsPrinted(ExistingSlipId);
+
             if (this.Tag is Button cardToDelete)
             {
-                DatabaseManager.MarkSlipAsPrinted(txtBilNumber.Text);
-
                 Main mainPage = (Main)Application.OpenForms["Main"];
                 if (mainPage != null)
                 {
@@ -195,27 +277,72 @@ namespace SlipManagement2
                     cardToDelete.Dispose();
                 }
             }
+
             this.Close();
         }
 
-
-
-        // Paste these three helper routines to satisfy the background designer file errors:
-        private void btnSave_Click_1(object sender, EventArgs e)
+        // Reads current values from all 10 fields — checks ComboBoxes before TextBoxes
+        private string[] CollectFields()
         {
-            btnSave_Click(sender, e); // Routes the action right to your main save logic
+            string[] fields = new string[10];
+            for (int i = 1; i <= 10; i++)
+            {
+                string key = "Field" + i;
+                if (_lookupBoxes.TryGetValue(key, out ComboBox cb))
+                    fields[i - 1] = cb.Text;
+                else
+                {
+                    var matches = this.Controls.Find("txtField" + i, true);
+                    fields[i - 1] = (matches.Length > 0 && matches[0] is TextBox tb) ? tb.Text : "";
+                }
+            }
+            return fields;
         }
 
-        private void btnCancel_Click_1(object sender, EventArgs e)
+        private void UpdateOrCreateTile(string[] fields)
         {
-            btnCancel_Click(sender, e); // Routes the action to your clean close logic
+            string regDisplay  = fields[0];
+            string tonsDisplay = string.IsNullOrWhiteSpace(fields[6]) ? "0" : fields[6];
+            string tileText    = $"Reg: {regDisplay}\nSlip: {ExistingSlipId}\nTons: {tonsDisplay}";
+
+            if (this.Tag is Button existingCard)
+            {
+                existingCard.Text = tileText;
+                if (existingCard.Tag is Dictionary<string, string> savedData)
+                {
+                    savedData["BillNumber"] = txtBilNumber.Text;
+                    for (int i = 1; i <= 10; i++)
+                        savedData["Field" + i] = fields[i - 1];
+                }
+                return;
+            }
+
+            Button slipCard = new Button
+            {
+                Size      = new Size(200, 110),
+                BackColor = Color.LightYellow,
+                FlatStyle = FlatStyle.Flat,
+                Font      = new Font("Arial", 10, FontStyle.Bold),
+                Text      = tileText,
+            };
+
+            var memoryCache = new Dictionary<string, string>
+            {
+                { "SlipID",     ExistingSlipId.ToString() },
+                { "BillNumber", txtBilNumber.Text },
+            };
+            for (int i = 1; i <= 10; i++)
+                memoryCache.Add("Field" + i, fields[i - 1]);
+
+            slipCard.Tag    = memoryCache;
+            slipCard.Click += SlipCard_Click;
+
+            Main mainPage = (Main)Application.OpenForms["Main"];
+            mainPage?.flpSlips.Controls.Add(slipCard);
         }
 
-        private void btnPrint_Click_1(object sender, EventArgs e)
-        {
-            btnPrint_Click(sender, e); // Routes the action to your universal print engine
-        }
-
+        private void btnSave_Click_1(object sender, EventArgs e)   => btnSave_Click(sender, e);
+        private void btnCancel_Click_1(object sender, EventArgs e) => btnCancel_Click(sender, e);
+        private void btnPrint_Click_1(object sender, EventArgs e)  => btnPrint_Click(sender, e);
     }
 }
-
