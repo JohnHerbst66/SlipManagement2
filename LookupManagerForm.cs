@@ -6,16 +6,7 @@ namespace SlipManagement2
 {
     public class LookupManagerForm : Form
     {
-        private static readonly (string TableName, string DisplayName)[] Lists = new[]
-        {
-            ("TruckRegs",     "Truck Regs"),
-            ("StockpileRefs", "Stockpile Refs"),
-            ("ROMTypes",      "ROM Types"),
-            ("BlockNrs",      "Block Numbers"),
-            ("Sizes",         "Sizes"),
-            ("Clients",       "Clients"),
-            ("Destinations",  "Destinations"),
-        };
+        private (string TableName, string DisplayName)[] _lists;
 
         private ComboBox _cboList;
         private ListBox  _lstValues;
@@ -23,12 +14,21 @@ namespace SlipManagement2
 
         public LookupManagerForm()
         {
-            Text            = "Manage Lookup Lists";
-            Size            = new Size(430, 530);
-            StartPosition   = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox     = false;
-            MinimizeBox     = false;
+            Text          = "Manage Lookup Lists";
+            Size          = new Size(430, 530);
+            StartPosition = FormStartPosition.CenterParent;
+            WindowState   = FormWindowState.Maximized;
+
+            // Build the list from FieldConfig so it stays in sync with field renames
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var built = new System.Collections.Generic.List<(string, string)>();
+            foreach (var kvp in DatabaseManager.GetActiveFieldConfigurations())
+            {
+                string table = kvp.Value.LookupTable;
+                if (!string.IsNullOrEmpty(table) && seen.Add(table))
+                    built.Add((table, kvp.Value.CustomName));
+            }
+            _lists = built.ToArray();
 
             BuildUI();
         }
@@ -48,9 +48,10 @@ namespace SlipManagement2
                 Location      = new Point(12, 34),
                 Size          = new Size(388, 24),
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Font          = new Font("Arial", 10)
+                Font          = new Font("Arial", 10),
+                Anchor        = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             };
-            foreach (var list in Lists)
+            foreach (var list in _lists)
                 _cboList.Items.Add(list.DisplayName);
             _cboList.SelectedIndex = 0;
             _cboList.SelectedIndexChanged += (s, e) => LoadList();
@@ -68,7 +69,8 @@ namespace SlipManagement2
                 Location = new Point(12, 92),
                 Size     = new Size(388, 240),
                 Font     = new Font("Arial", 10),
-                Sorted   = true
+                Sorted   = true,
+                Anchor   = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             };
 
             var btnDelete = new Button
@@ -78,7 +80,8 @@ namespace SlipManagement2
                 Size      = new Size(180, 36),
                 BackColor = Color.Tomato,
                 FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Arial", 9, FontStyle.Bold)
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
             };
             btnDelete.Click += BtnDelete_Click;
 
@@ -87,7 +90,8 @@ namespace SlipManagement2
                 Text      = "──────────────────────────────────────",
                 Location  = new Point(12, 390),
                 AutoSize  = true,
-                ForeColor = Color.Silver
+                ForeColor = Color.Silver,
+                Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
             };
 
             var lblNew = new Label
@@ -95,14 +99,16 @@ namespace SlipManagement2
                 Text     = "Add new entry:",
                 Location = new Point(12, 410),
                 AutoSize = true,
-                Font     = new Font("Arial", 9, FontStyle.Bold)
+                Font     = new Font("Arial", 9, FontStyle.Bold),
+                Anchor   = AnchorStyles.Bottom | AnchorStyles.Left,
             };
 
             _txtNew = new TextBox
             {
                 Location = new Point(12, 430),
                 Size     = new Size(270, 24),
-                Font     = new Font("Arial", 10)
+                Font     = new Font("Arial", 10),
+                Anchor   = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             };
             _txtNew.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) BtnAdd_Click(s, e); };
 
@@ -113,7 +119,8 @@ namespace SlipManagement2
                 Size      = new Size(108, 28),
                 BackColor = Color.LightGreen,
                 FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Arial", 9, FontStyle.Bold)
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                Anchor    = AnchorStyles.Bottom | AnchorStyles.Right,
             };
             btnAdd.Click += BtnAdd_Click;
 
@@ -122,7 +129,8 @@ namespace SlipManagement2
                 Text      = "Close",
                 Location  = new Point(314, 342),
                 Size      = new Size(86, 36),
-                FlatStyle = FlatStyle.Flat
+                FlatStyle = FlatStyle.Flat,
+                Anchor    = AnchorStyles.Bottom | AnchorStyles.Right,
             };
             btnClose.Click += (s, e) => Close();
 
@@ -136,7 +144,7 @@ namespace SlipManagement2
             LoadList();
         }
 
-        private string SelectedTable => Lists[_cboList.SelectedIndex].TableName;
+        private string SelectedTable => _lists[_cboList.SelectedIndex].TableName;
 
         private void LoadList()
         {
@@ -167,7 +175,7 @@ namespace SlipManagement2
             }
 
             string val = _lstValues.SelectedItem.ToString();
-            string listName = Lists[_cboList.SelectedIndex].DisplayName;
+            string listName = _lists[_cboList.SelectedIndex].DisplayName;
 
             var confirm = MessageBox.Show(
                 $"Delete \"{val}\" from {listName}?\n\nExisting slips that used this value are NOT affected.",

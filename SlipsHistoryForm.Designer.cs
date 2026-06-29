@@ -41,6 +41,7 @@
             this.btnSave = new System.Windows.Forms.Button();
             this.btnCancel = new System.Windows.Forms.Button();
             this.btnPrint = new System.Windows.Forms.Button();
+            this.btnVoid = new System.Windows.Forms.Button();
             this.btnExport = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
             this.label2 = new System.Windows.Forms.Label();
@@ -57,6 +58,7 @@
             this.panel1.Controls.Add(this.dtpFromDate);
             this.panel1.Controls.Add(this.dtpToDate);
             this.panel1.Controls.Add(this.dataGridView1);
+            this.panel1.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.panel1.Location = new System.Drawing.Point(12, 68);
             this.panel1.Name = "panel1";
             this.panel1.Size = new System.Drawing.Size(1206, 285);
@@ -80,6 +82,7 @@
             // 
             // dataGridView1
             // 
+            this.dataGridView1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.dataGridView1.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dataGridView1.Location = new System.Drawing.Point(19, 52);
             this.dataGridView1.Name = "dataGridView1";
@@ -92,6 +95,7 @@
             // panel2
             // 
             this.panel2.Controls.Add(this.tabControl1);
+            this.panel2.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.panel2.Location = new System.Drawing.Point(12, 359);
             this.panel2.Name = "panel2";
             this.panel2.Size = new System.Drawing.Size(1206, 368);
@@ -101,6 +105,7 @@
             // 
             this.tabControl1.Controls.Add(this.tabPage1);
             this.tabControl1.Controls.Add(this.tabPage2);
+            this.tabControl1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.tabControl1.Location = new System.Drawing.Point(19, 3);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
@@ -159,9 +164,21 @@
             this.btnPrint.Text = "PRINT";
             this.btnPrint.UseVisualStyleBackColor = false;
             this.btnPrint.Click += new System.EventHandler(this.btnPrint_Click);
-            // 
+            //
+            // btnVoid
+            //
+            this.btnVoid.BackColor = System.Drawing.Color.Orange;
+            this.btnVoid.Location = new System.Drawing.Point(503, 12);
+            this.btnVoid.Name = "btnVoid";
+            this.btnVoid.Size = new System.Drawing.Size(137, 47);
+            this.btnVoid.TabIndex = 23;
+            this.btnVoid.Text = "VOID SLIP";
+            this.btnVoid.UseVisualStyleBackColor = false;
+            this.btnVoid.Click += new System.EventHandler(this.btnVoid_Click);
+            //
             // btnExport
             // 
+            this.btnExport.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnExport.BackColor = System.Drawing.Color.SteelBlue;
             this.btnExport.Location = new System.Drawing.Point(1062, 15);
             this.btnExport.Name = "btnExport";
@@ -194,7 +211,9 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1230, 731);
+            this.WindowState = System.Windows.Forms.FormWindowState.Maximized;
             this.Controls.Add(this.btnExport);
+            this.Controls.Add(this.btnVoid);
             this.Controls.Add(this.btnPrint);
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnSave);
@@ -219,6 +238,7 @@
         private System.Windows.Forms.Button btnSave;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.Button btnPrint;
+        private System.Windows.Forms.Button btnVoid;
         private System.Windows.Forms.Button btnExport;
         private System.Windows.Forms.TabControl tabControl1;
         private System.Windows.Forms.TabPage tabPage1;

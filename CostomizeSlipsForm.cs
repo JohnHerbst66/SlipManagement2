@@ -9,6 +9,7 @@ namespace SlipManagement2
         private TextBox txtCompanyHeader;
         private TextBox txtLogoPath;
         private CheckedListBox chkListSlipFields;
+        private CheckedListBox chkListRequiredFields;
 
         public CustomizeSlipsForm()
         {
@@ -33,6 +34,10 @@ namespace SlipManagement2
                 dgvFieldSetup.AllowUserToDeleteRows = false;
                 if (dgvFieldSetup.Columns.Contains("Database Slot"))
                     dgvFieldSetup.Columns["Database Slot"].ReadOnly = true;
+
+                // Required is managed by the checklist on the Slip Design tab — hide from grid
+                if (dgvFieldSetup.Columns.Contains("Required (1=Yes)"))
+                    dgvFieldSetup.Columns["Required (1=Yes)"].Visible = false;
 
                 // Field1 (Truck Reg) and Field7 (Tons) can never be hidden — spec §4.5
                 if (dgvFieldSetup.Columns.Contains("Hidden (1=Yes)"))
@@ -74,8 +79,12 @@ namespace SlipManagement2
             btnBrowse.Click += BtnBrowse_Click;
 
             Label lblChecklist = new Label() { Text = "Select which fields print on the final slip:", Location = new System.Drawing.Point(20, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
-            chkListSlipFields = new CheckedListBox() { Location = new System.Drawing.Point(20, 175), Size = new System.Drawing.Size(350, 160), CheckOnClick = true };
+            chkListSlipFields = new CheckedListBox() { Location = new System.Drawing.Point(20, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
             chkListSlipFields.ItemCheck += ChkListSlipFields_ItemCheck;
+
+            Label lblRequired = new Label() { Text = "Select which fields are required before printing:", Location = new System.Drawing.Point(420, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
+            chkListRequiredFields = new CheckedListBox() { Location = new System.Drawing.Point(420, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
+            chkListRequiredFields.ItemCheck += ChkListRequiredFields_ItemCheck;
 
             tabSlipDesign.Controls.Add(lblHeader);
             tabSlipDesign.Controls.Add(txtCompanyHeader);
@@ -84,6 +93,8 @@ namespace SlipManagement2
             tabSlipDesign.Controls.Add(btnBrowse);
             tabSlipDesign.Controls.Add(lblChecklist);
             tabSlipDesign.Controls.Add(chkListSlipFields);
+            tabSlipDesign.Controls.Add(lblRequired);
+            tabSlipDesign.Controls.Add(chkListRequiredFields);
         }
 
         private void LoadSlipDesignSettings()
@@ -132,7 +143,7 @@ namespace SlipManagement2
             }
         }
 
-        // Rebuild checklist from current DataTable state — called on form load and on tab switch
+        // Rebuild checklists from current DataTable state — called on form load and on tab switch
         private void RefreshChecklistFromGrid()
         {
             DataTable dt = (DataTable)dgvFieldSetup.DataSource;
@@ -140,12 +151,15 @@ namespace SlipManagement2
 
             dgvFieldSetup.EndEdit(); // commit any in-progress cell edit before reading
             chkListSlipFields.Items.Clear();
+            chkListRequiredFields.Items.Clear();
             foreach (DataRow row in dt.Rows)
             {
-                string slot    = row["Database Slot"].ToString();
-                string label   = row["Label Name"].ToString();
-                bool   visible = Convert.ToInt32(row["Hidden (1=Yes)"]) == 0;
+                string slot     = row["Database Slot"].ToString();
+                string label    = row["Label Name"].ToString();
+                bool   visible  = Convert.ToInt32(row["Hidden (1=Yes)"])   == 0;
+                bool   required = Convert.ToInt32(row["Required (1=Yes)"]) == 1;
                 chkListSlipFields.Items.Add($"{slot} : {label}", visible);
+                chkListRequiredFields.Items.Add($"{slot} : {label}", required);
             }
         }
 
@@ -178,6 +192,32 @@ namespace SlipManagement2
                 if (row["Database Slot"].ToString() == fieldSlot)
                 {
                     row["Hidden (1=Yes)"] = newHidden;
+                    break;
+                }
+            }
+        }
+
+        private void ChkListRequiredFields_ItemCheck(object sender, ItemCheckEventArgs args)
+        {
+            string item = chkListRequiredFields.Items[args.Index].ToString();
+
+            // Field7 (Tons) is always required — reject any change
+            if (item.StartsWith("Field7 :"))
+            {
+                args.NewValue = args.CurrentValue;
+                return;
+            }
+
+            string fieldSlot  = item.Split(':')[0].Trim();
+            int    newRequired = args.NewValue == CheckState.Checked ? 1 : 0;
+
+            DataTable dt = (DataTable)dgvFieldSetup.DataSource;
+            if (dt == null) return;
+            foreach (DataRow row in dt.Rows)
+            {
+                if (row["Database Slot"].ToString() == fieldSlot)
+                {
+                    row["Required (1=Yes)"] = newRequired;
                     break;
                 }
             }

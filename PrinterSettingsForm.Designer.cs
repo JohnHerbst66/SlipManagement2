@@ -79,6 +79,7 @@
             // 
             // btnSaveSettings
             // 
+            this.btnSaveSettings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.btnSaveSettings.BackColor = System.Drawing.Color.PaleGreen;
             this.btnSaveSettings.Location = new System.Drawing.Point(199, 328);
             this.btnSaveSettings.Name = "btnSaveSettings";
@@ -90,6 +91,7 @@
             // 
             // btnCancelSettings
             // 
+            this.btnCancelSettings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.btnCancelSettings.BackColor = System.Drawing.Color.IndianRed;
             this.btnCancelSettings.Location = new System.Drawing.Point(374, 328);
             this.btnCancelSettings.Name = "btnCancelSettings";
@@ -156,6 +158,7 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(800, 450);
+            this.WindowState = System.Windows.Forms.FormWindowState.Maximized;
             this.Controls.Add(this.label5);
             this.Controls.Add(this.label4);
             this.Controls.Add(this.numCopies);

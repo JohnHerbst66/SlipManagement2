@@ -164,49 +164,50 @@
             this.txtSlipID.Name = "txtSlipID";
             this.txtSlipID.ReadOnly = true;
             this.txtSlipID.Size = new System.Drawing.Size(231, 22);
-            this.txtSlipID.TabIndex = 10;
+            this.txtSlipID.TabIndex = 0;
+            this.txtSlipID.TabStop = false;
             // 
             // txtField1
             // 
             this.txtField1.Location = new System.Drawing.Point(232, 178);
             this.txtField1.Name = "txtField1";
             this.txtField1.Size = new System.Drawing.Size(231, 22);
-            this.txtField1.TabIndex = 11;
+            this.txtField1.TabIndex = 1;
             // 
             // txtField2
             // 
             this.txtField2.Location = new System.Drawing.Point(232, 226);
             this.txtField2.Name = "txtField2";
             this.txtField2.Size = new System.Drawing.Size(231, 22);
-            this.txtField2.TabIndex = 12;
+            this.txtField2.TabIndex = 2;
             // 
             // txtField3
             // 
             this.txtField3.Location = new System.Drawing.Point(232, 265);
             this.txtField3.Name = "txtField3";
             this.txtField3.Size = new System.Drawing.Size(231, 22);
-            this.txtField3.TabIndex = 13;
+            this.txtField3.TabIndex = 3;
             // 
             // txtField4
             // 
             this.txtField4.Location = new System.Drawing.Point(232, 305);
             this.txtField4.Name = "txtField4";
             this.txtField4.Size = new System.Drawing.Size(231, 22);
-            this.txtField4.TabIndex = 14;
+            this.txtField4.TabIndex = 4;
             // 
             // txtField5
             // 
             this.txtField5.Location = new System.Drawing.Point(232, 349);
             this.txtField5.Name = "txtField5";
             this.txtField5.Size = new System.Drawing.Size(231, 22);
-            this.txtField5.TabIndex = 15;
+            this.txtField5.TabIndex = 5;
             // 
             // txtField6
             // 
             this.txtField6.Location = new System.Drawing.Point(232, 399);
             this.txtField6.Name = "txtField6";
             this.txtField6.Size = new System.Drawing.Size(231, 22);
-            this.txtField6.TabIndex = 16;
+            this.txtField6.TabIndex = 6;
             // 
             // txtBilNumber
             // 
@@ -214,14 +215,16 @@
             this.txtBilNumber.Name = "txtBilNumber";
             this.txtBilNumber.ReadOnly = true;
             this.txtBilNumber.Size = new System.Drawing.Size(231, 22);
-            this.txtBilNumber.TabIndex = 17;
+            this.txtBilNumber.TabIndex = 0;
+            this.txtBilNumber.TabStop = false;
             // 
             // txtField7
             // 
             this.txtField7.Location = new System.Drawing.Point(584, 178);
+            this.txtField7.MaxLength = 6;
             this.txtField7.Name = "txtField7";
             this.txtField7.Size = new System.Drawing.Size(231, 22);
-            this.txtField7.TabIndex = 18;
+            this.txtField7.TabIndex = 7;
             // 
             // btnSave
             // 
@@ -229,7 +232,7 @@
             this.btnSave.Location = new System.Drawing.Point(134, 490);
             this.btnSave.Name = "btnSave";
             this.btnSave.Size = new System.Drawing.Size(137, 62);
-            this.btnSave.TabIndex = 19;
+            this.btnSave.TabIndex = 11;
             this.btnSave.Text = "SAVE";
             this.btnSave.UseVisualStyleBackColor = false;
             this.btnSave.Click += new System.EventHandler(this.btnSave_Click_1);
@@ -240,7 +243,7 @@
             this.btnCancel.Location = new System.Drawing.Point(388, 490);
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(137, 62);
-            this.btnCancel.TabIndex = 20;
+            this.btnCancel.TabIndex = 12;
             this.btnCancel.Text = "CANCEL";
             this.btnCancel.UseVisualStyleBackColor = false;
             this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click_1);
@@ -251,7 +254,7 @@
             this.btnPrint.Location = new System.Drawing.Point(640, 490);
             this.btnPrint.Name = "btnPrint";
             this.btnPrint.Size = new System.Drawing.Size(137, 62);
-            this.btnPrint.TabIndex = 21;
+            this.btnPrint.TabIndex = 13;
             this.btnPrint.Text = "PRINT";
             this.btnPrint.UseVisualStyleBackColor = false;
             this.btnPrint.Click += new System.EventHandler(this.btnPrint_Click_1);
@@ -291,21 +294,21 @@
             this.txtField8.Location = new System.Drawing.Point(582, 224);
             this.txtField8.Name = "txtField8";
             this.txtField8.Size = new System.Drawing.Size(231, 22);
-            this.txtField8.TabIndex = 25;
+            this.txtField8.TabIndex = 8;
             // 
             // txtField9
             // 
             this.txtField9.Location = new System.Drawing.Point(582, 265);
             this.txtField9.Name = "txtField9";
             this.txtField9.Size = new System.Drawing.Size(231, 22);
-            this.txtField9.TabIndex = 26;
+            this.txtField9.TabIndex = 9;
             // 
             // txtField10
             // 
             this.txtField10.Location = new System.Drawing.Point(582, 305);
             this.txtField10.Name = "txtField10";
             this.txtField10.Size = new System.Drawing.Size(231, 22);
-            this.txtField10.TabIndex = 27;
+            this.txtField10.TabIndex = 10;
             // 
             // CreateSlip
             // 

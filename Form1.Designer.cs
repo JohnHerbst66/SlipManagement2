@@ -40,12 +40,13 @@ namespace SlipManagement2
             this.btnCustomizeSlips = new System.Windows.Forms.Button();
             this.flpSlips.SuspendLayout();
             this.SuspendLayout();
-            // 
+            //
             // btnCreate
-            // 
+            //
+            this.btnCreate.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.btnCreate.BackColor = System.Drawing.Color.PaleGreen;
             this.btnCreate.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnCreate.Location = new System.Drawing.Point(12, 525);
+            this.btnCreate.Location = new System.Drawing.Point(12, 508);
             this.btnCreate.Name = "btnCreate";
             this.btnCreate.Size = new System.Drawing.Size(113, 45);
             this.btnCreate.TabIndex = 0;
@@ -66,9 +67,10 @@ namespace SlipManagement2
             // flpSlips
             // 
             this.flpSlips.Controls.Add(this.lblSlipsPanel);
-            this.flpSlips.Location = new System.Drawing.Point(12, 78);
+            this.flpSlips.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
+            this.flpSlips.Location = new System.Drawing.Point(12, 230);
             this.flpSlips.Name = "flpSlips";
-            this.flpSlips.Size = new System.Drawing.Size(1141, 421);
+            this.flpSlips.Size = new System.Drawing.Size(1141, 269);
             this.flpSlips.TabIndex = 2;
             // 
             // lblSlipsPanel
@@ -82,6 +84,7 @@ namespace SlipManagement2
             // 
             // btnOpenSettings
             // 
+            this.btnOpenSettings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnOpenSettings.BackColor = System.Drawing.Color.Gainsboro;
             this.btnOpenSettings.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnOpenSettings.Location = new System.Drawing.Point(802, 15);
@@ -94,6 +97,7 @@ namespace SlipManagement2
             // 
             // btnSlipHistory
             // 
+            this.btnSlipHistory.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnSlipHistory.BackColor = System.Drawing.Color.Gainsboro;
             this.btnSlipHistory.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnSlipHistory.Location = new System.Drawing.Point(921, 15);
@@ -106,6 +110,7 @@ namespace SlipManagement2
             // 
             // btnExit
             // 
+            this.btnExit.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnExit.BackColor = System.Drawing.Color.RosyBrown;
             this.btnExit.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnExit.Location = new System.Drawing.Point(1040, 15);
@@ -118,6 +123,7 @@ namespace SlipManagement2
             // 
             // btnCustomizeSlips
             // 
+            this.btnCustomizeSlips.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnCustomizeSlips.BackColor = System.Drawing.Color.Gainsboro;
             this.btnCustomizeSlips.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnCustomizeSlips.Location = new System.Drawing.Point(683, 15);
@@ -133,6 +139,7 @@ namespace SlipManagement2
             this.AutoScaleDimensions = new System.Drawing.SizeF(120F, 120F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             this.ClientSize = new System.Drawing.Size(1220, 634);
+            this.WindowState = System.Windows.Forms.FormWindowState.Maximized;
             this.Controls.Add(this.btnCustomizeSlips);
             this.Controls.Add(this.btnSlipHistory);
             this.Controls.Add(this.btnExit);

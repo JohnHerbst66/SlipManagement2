@@ -43,6 +43,7 @@
             // 
             this.tbcCustomize.Controls.Add(this.tabFieldSetup);
             this.tbcCustomize.Controls.Add(this.tabSlipDesign);
+            this.tbcCustomize.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.tbcCustomize.Location = new System.Drawing.Point(23, 54);
             this.tbcCustomize.Name = "tbcCustomize";
             this.tbcCustomize.SelectedIndex = 0;
@@ -62,6 +63,7 @@
             // 
             // dgvFieldSetup
             // 
+            this.dgvFieldSetup.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.dgvFieldSetup.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dgvFieldSetup.Location = new System.Drawing.Point(15, 6);
             this.dgvFieldSetup.Name = "dgvFieldSetup";
@@ -107,6 +109,7 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1211, 640);
+            this.WindowState = System.Windows.Forms.FormWindowState.Maximized;
             this.Controls.Add(this.btnExit);
             this.Controls.Add(this.btnSave);
             this.Controls.Add(this.tbcCustomize);

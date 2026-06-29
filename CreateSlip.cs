@@ -56,6 +56,7 @@ namespace SlipManagement2
                         AutoCompleteMode   = AutoCompleteMode.SuggestAppend,
                         AutoCompleteSource = AutoCompleteSource.ListItems,
                         Font               = targetBox.Font,
+                        TabIndex           = i,
                     };
 
                     var values = DatabaseManager.GetLookupValues(cfg.LookupTable);
@@ -85,7 +86,16 @@ namespace SlipManagement2
             txtSlipID.Text    = "Auto-assigned";
 
             txtField7.TextChanged += (s, e) => ValidatePrintButton();
+            txtField7.KeyPress    += txtField7_KeyPress;
             ValidatePrintButton();
+
+            this.Shown += (s, e) =>
+            {
+                Control first = _lookupBoxes.ContainsKey("Field1")
+                    ? (Control)_lookupBoxes["Field1"]
+                    : txtField1;
+                if (first.Visible) first.Focus();
+            };
         }
 
         // Sets a field value regardless of whether it uses a ComboBox or TextBox.
@@ -93,13 +103,51 @@ namespace SlipManagement2
         public void SetFieldValue(int fieldNumber, string value)
         {
             string key = "Field" + fieldNumber;
+            // Field7 (Tons) is stored with period; display with comma to match input format
+            string display = (fieldNumber == 7) ? value.Replace('.', ',') : value;
             if (_lookupBoxes.TryGetValue(key, out ComboBox cb))
-                cb.Text = value;
+                cb.Text = display;
             else
             {
                 var matches = this.Controls.Find("txtField" + fieldNumber, true);
                 if (matches.Length > 0 && matches[0] is TextBox tb)
-                    tb.Text = value;
+                    tb.Text = display;
+            }
+        }
+
+        private void txtField7_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (char.IsControl(e.KeyChar)) return;
+
+            if (!char.IsDigit(e.KeyChar) && e.KeyChar != ',' && e.KeyChar != '.')
+            { e.Handled = true; return; }
+
+            char ch          = (e.KeyChar == '.') ? ',' : e.KeyChar;
+            string current   = txtField7.Text;
+            int selStart     = txtField7.SelectionStart;
+            int selLen       = txtField7.SelectionLength;
+            string simulated = current.Remove(selStart, selLen).Insert(selStart, ch.ToString());
+
+            int commaPos = simulated.IndexOf(',');
+            if (commaPos < 0)
+            {
+                if (simulated.Length > 2) { e.Handled = true; return; }
+            }
+            else
+            {
+                string before = simulated.Substring(0, commaPos);
+                string after  = simulated.Substring(commaPos + 1);
+                if (before.Length > 2 || after.Length > 3 || after.Contains(','))
+                { e.Handled = true; return; }
+            }
+
+            // Redirect period keystroke so it arrives as a comma
+            if (e.KeyChar == '.')
+            {
+                e.Handled                 = true;
+                txtField7.Text            = simulated;
+                txtField7.SelectionStart  = selStart + 1;
+                txtField7.SelectionLength = 0;
             }
         }
 
@@ -240,6 +288,34 @@ namespace SlipManagement2
         {
             string[] fields = CollectFields();
             fields[6] = NormalizeTons(fields[6]);
+
+            if (string.IsNullOrWhiteSpace(fields[6]))
+            {
+                MessageBox.Show("Tons must be filled in before printing.",
+                    "Required Field", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtField7.Focus();
+                return;
+            }
+
+            var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
+            var missing = new System.Collections.Generic.List<string>();
+            for (int i = 1; i <= 10; i++)
+            {
+                string key = "Field" + i;
+                if (!fieldConfigs.ContainsKey(key)) continue;
+                var cfg = fieldConfigs[key];
+                if (cfg.IsHidden || !cfg.IsRequired) continue;
+                if (string.IsNullOrWhiteSpace(fields[i - 1]))
+                    missing.Add(cfg.CustomName);
+            }
+            if (missing.Count > 0)
+            {
+                MessageBox.Show(
+                    "The following required fields must be filled before printing:\n\n• " +
+                    string.Join("\n• ", missing),
+                    "Required Fields", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
             if (ExistingSlipId == 0)
             {

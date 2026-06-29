@@ -50,7 +50,8 @@ namespace SlipManagement2
                             LabelName   TEXT    NOT NULL,
                             OrderLine   INTEGER NOT NULL,
                             Hidden      INTEGER NOT NULL DEFAULT 0,
-                            LookupTable TEXT    NOT NULL DEFAULT ''
+                            LookupTable TEXT    NOT NULL DEFAULT '',
+                            IsRequired  INTEGER NOT NULL DEFAULT 0
                         );");
 
                     ExecNQ(conn, @"
@@ -81,6 +82,8 @@ namespace SlipManagement2
                     ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Sizes         (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
                     ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Clients       (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
                     ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Destinations  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
+                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS OrderNumbers  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
+                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Slots         (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
 
                     MigrateSchemaIfNeeded(conn);
                     SeedFieldConfigIfEmpty(conn);
@@ -126,11 +129,15 @@ namespace SlipManagement2
         private static void MigrateSchemaIfNeeded(SQLiteConnection conn)
         {
             bool hasLookupTable = false;
+            bool hasIsRequired  = false;
             using (var cmd = new SQLiteCommand("PRAGMA table_info(FieldConfig);", conn))
             using (var r = cmd.ExecuteReader())
                 while (r.Read())
-                    if (r["name"].ToString().Equals("LookupTable", StringComparison.OrdinalIgnoreCase))
-                    { hasLookupTable = true; break; }
+                {
+                    string col = r["name"].ToString();
+                    if (col.Equals("LookupTable", StringComparison.OrdinalIgnoreCase)) hasLookupTable = true;
+                    if (col.Equals("IsRequired",  StringComparison.OrdinalIgnoreCase)) hasIsRequired  = true;
+                }
 
             if (!hasLookupTable)
             {
@@ -152,6 +159,13 @@ namespace SlipManagement2
                         cmd.ExecuteNonQuery();
                     }
             }
+
+            if (!hasIsRequired)
+                ExecNQ(conn, "ALTER TABLE FieldConfig ADD COLUMN IsRequired INTEGER NOT NULL DEFAULT 0;");
+
+            // Backfill Field8/9 lookup tables for databases created before this was added
+            ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='OrderNumbers' WHERE FieldSlot='Field8' AND (LookupTable IS NULL OR LookupTable='');");
+            ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='Slots'        WHERE FieldSlot='Field9' AND (LookupTable IS NULL OR LookupTable='');");
         }
 
         private static void SeedFieldConfigIfEmpty(SQLiteConnection conn)
@@ -170,8 +184,8 @@ namespace SlipManagement2
                 ("Field5",  "Size",           5,  "Sizes"),
                 ("Field6",  "Destination",    6,  "Destinations"),
                 ("Field7",  "Tons",           7,  ""),
-                ("Field8",  "Order Number",   8,  ""),
-                ("Field9",  "Slot",           9,  ""),
+                ("Field8",  "Order Number",   8,  "OrderNumbers"),
+                ("Field9",  "Slot",           9,  "Slots"),
                 ("Field10", "Client",         10, "Clients"),
             };
 
@@ -319,6 +333,30 @@ namespace SlipManagement2
             catch (Exception ex)
             {
                 MessageBox.Show("Error marking slip as printed: " + ex.Message);
+            }
+        }
+
+        // Voids a Printed slip from the history form; returns true if a row was affected.
+        public static bool VoidPrintedSlip(int slipId, string reason)
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(
+                        "UPDATE Slips SET Status='Voided', VoidReason=@R WHERE SlipID=@ID AND Status='Printed';", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@ID", slipId);
+                        cmd.Parameters.AddWithValue("@R",  reason);
+                        return cmd.ExecuteNonQuery() > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error voiding slip: " + ex.Message);
+                return false;
             }
         }
 
@@ -711,6 +749,7 @@ namespace SlipManagement2
             public int    PositionOrder { get; set; }
             public bool   IsHidden      { get; set; }
             public string LookupTable   { get; set; }
+            public bool   IsRequired    { get; set; }
         }
 
         // Returns FieldConfig as a DataTable with the exact column aliases the grid expects.
@@ -723,10 +762,11 @@ namespace SlipManagement2
                 {
                     conn.Open();
                     const string sql = @"
-                        SELECT FieldSlot AS [Database Slot],
-                               LabelName AS [Label Name],
-                               OrderLine AS [Order Line],
-                               Hidden    AS [Hidden (1=Yes)]
+                        SELECT FieldSlot  AS [Database Slot],
+                               LabelName  AS [Label Name],
+                               OrderLine  AS [Order Line],
+                               Hidden     AS [Hidden (1=Yes)],
+                               IsRequired AS [Required (1=Yes)]
                         FROM FieldConfig
                         ORDER BY OrderLine ASC;";
                     using (var adapter = new SQLiteDataAdapter(sql, conn))
@@ -747,16 +787,18 @@ namespace SlipManagement2
                 {
                     const string sql = @"
                         UPDATE FieldConfig SET
-                            LabelName = @LabelName,
-                            OrderLine = @OrderLine,
-                            Hidden    = @Hidden
+                            LabelName  = @LabelName,
+                            OrderLine  = @OrderLine,
+                            Hidden     = @Hidden,
+                            IsRequired = @IsRequired
                         WHERE FieldSlot = @FieldSlot;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@FieldSlot", row["Database Slot"].ToString());
-                        cmd.Parameters.AddWithValue("@LabelName", row["Label Name"].ToString());
-                        cmd.Parameters.AddWithValue("@OrderLine", Convert.ToInt32(row["Order Line"]));
-                        cmd.Parameters.AddWithValue("@Hidden",    Convert.ToInt32(row["Hidden (1=Yes)"]));
+                        cmd.Parameters.AddWithValue("@FieldSlot",  row["Database Slot"].ToString());
+                        cmd.Parameters.AddWithValue("@LabelName",  row["Label Name"].ToString());
+                        cmd.Parameters.AddWithValue("@OrderLine",  Convert.ToInt32(row["Order Line"]));
+                        cmd.Parameters.AddWithValue("@Hidden",     Convert.ToInt32(row["Hidden (1=Yes)"]));
+                        cmd.Parameters.AddWithValue("@IsRequired", Convert.ToInt32(row["Required (1=Yes)"]));
                         cmd.ExecuteNonQuery();
                     }
                 }
@@ -772,7 +814,7 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    const string sql = "SELECT FieldSlot, LabelName, OrderLine, Hidden, LookupTable FROM FieldConfig ORDER BY OrderLine;";
+                    const string sql = "SELECT FieldSlot, LabelName, OrderLine, Hidden, LookupTable, IsRequired FROM FieldConfig ORDER BY OrderLine;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                     {
@@ -782,7 +824,8 @@ namespace SlipManagement2
                             {
                                 CustomName    = r["LabelName"].ToString(),
                                 PositionOrder = Convert.ToInt32(r["OrderLine"]),
-                                IsHidden      = Convert.ToInt32(r["Hidden"]) == 1,
+                                IsHidden      = Convert.ToInt32(r["Hidden"])     == 1,
+                                IsRequired    = Convert.ToInt32(r["IsRequired"]) == 1,
                                 LookupTable   = r["LookupTable"].ToString(),
                             };
                         }
@@ -791,6 +834,68 @@ namespace SlipManagement2
             }
             catch (Exception ex) { MessageBox.Show("Error loading field config: " + ex.Message); }
             return map;
+        }
+
+        // ===================================================================
+        // DAILY SUMMARY
+        // ===================================================================
+
+        // Returns total printed loads and total tons for today (local time).
+        public static (int loads, double totalTons) GetDailySummary()
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    const string sql = @"
+                        SELECT COUNT(*) AS Loads,
+                               COALESCE(SUM(CAST(Field7 AS REAL)), 0) AS TotalTons
+                        FROM Slips
+                        WHERE Status = 'Printed'
+                          AND date(PrintedAt, 'localtime') = date('now', 'localtime');";
+                    using (var cmd = new SQLiteCommand(sql, conn))
+                    using (var r = cmd.ExecuteReader())
+                        if (r.Read())
+                            return (Convert.ToInt32(r["Loads"]), Convert.ToDouble(r["TotalTons"]));
+                }
+            }
+            catch (Exception ex) { MessageBox.Show("Summary error: " + ex.Message); }
+            return (0, 0);
+        }
+
+        // Returns up to maxRows rows of (fieldValue, tons, loads) for today, grouped by fieldSlot.
+        public static List<(string value, double tons, int loads)> GetDailyTonsByField(string fieldSlot, int maxRows = 6)
+        {
+            var result = new List<(string, double, int)>();
+            // fieldSlot is always "Field1"–"Field10" set by our code, never user text
+            if (string.IsNullOrWhiteSpace(fieldSlot)) return result;
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    string sql = $@"
+                        SELECT {fieldSlot} AS Val,
+                               COALESCE(SUM(CAST(Field7 AS REAL)), 0) AS Tons,
+                               COUNT(*) AS Loads
+                        FROM Slips
+                        WHERE Status = 'Printed'
+                          AND date(PrintedAt, 'localtime') = date('now', 'localtime')
+                          AND {fieldSlot} IS NOT NULL AND {fieldSlot} != ''
+                        GROUP BY {fieldSlot}
+                        ORDER BY Tons DESC
+                        LIMIT {maxRows};";
+                    using (var cmd = new SQLiteCommand(sql, conn))
+                    using (var r = cmd.ExecuteReader())
+                        while (r.Read())
+                            result.Add((r["Val"].ToString(),
+                                        Convert.ToDouble(r["Tons"]),
+                                        Convert.ToInt32(r["Loads"])));
+                }
+            }
+            catch (Exception ex) { MessageBox.Show("Breakdown error: " + ex.Message); }
+            return result;
         }
 
         // ===================================================================
