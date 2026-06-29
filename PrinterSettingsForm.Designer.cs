@@ -36,6 +36,11 @@
             this.btnCancelSettings = new System.Windows.Forms.Button();
             this.label3 = new System.Windows.Forms.Label();
             this.cmbPaperSizes = new System.Windows.Forms.ComboBox();
+            this.cmbOrientation = new System.Windows.Forms.ComboBox();
+            this.numCopies = new System.Windows.Forms.NumericUpDown();
+            this.label4 = new System.Windows.Forms.Label();
+            this.label5 = new System.Windows.Forms.Label();
+            ((System.ComponentModel.ISupportInitialize)(this.numCopies)).BeginInit();
             this.SuspendLayout();
             // 
             // label1
@@ -74,6 +79,7 @@
             // 
             // btnSaveSettings
             // 
+            this.btnSaveSettings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.btnSaveSettings.BackColor = System.Drawing.Color.PaleGreen;
             this.btnSaveSettings.Location = new System.Drawing.Point(199, 328);
             this.btnSaveSettings.Name = "btnSaveSettings";
@@ -85,6 +91,7 @@
             // 
             // btnCancelSettings
             // 
+            this.btnCancelSettings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.btnCancelSettings.BackColor = System.Drawing.Color.IndianRed;
             this.btnCancelSettings.Location = new System.Drawing.Point(374, 328);
             this.btnCancelSettings.Name = "btnCancelSettings";
@@ -112,11 +119,49 @@
             this.cmbPaperSizes.Size = new System.Drawing.Size(121, 24);
             this.cmbPaperSizes.TabIndex = 7;
             // 
+            // cmbOrientation
+            // 
+            this.cmbOrientation.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbOrientation.FormattingEnabled = true;
+            this.cmbOrientation.Location = new System.Drawing.Point(167, 203);
+            this.cmbOrientation.Name = "cmbOrientation";
+            this.cmbOrientation.Size = new System.Drawing.Size(121, 24);
+            this.cmbOrientation.TabIndex = 8;
+            // 
+            // numCopies
+            // 
+            this.numCopies.Location = new System.Drawing.Point(167, 249);
+            this.numCopies.Name = "numCopies";
+            this.numCopies.Size = new System.Drawing.Size(120, 22);
+            this.numCopies.TabIndex = 9;
+            // 
+            // label4
+            // 
+            this.label4.AutoSize = true;
+            this.label4.Location = new System.Drawing.Point(37, 206);
+            this.label4.Name = "label4";
+            this.label4.Size = new System.Drawing.Size(74, 16);
+            this.label4.TabIndex = 10;
+            this.label4.Text = "Orientation:";
+            // 
+            // label5
+            // 
+            this.label5.AutoSize = true;
+            this.label5.Location = new System.Drawing.Point(26, 251);
+            this.label5.Name = "label5";
+            this.label5.Size = new System.Drawing.Size(98, 16);
+            this.label5.TabIndex = 11;
+            this.label5.Text = "Num of Copies:";
+            // 
             // PrinterSettingsForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(800, 450);
+            this.ClientSize = new System.Drawing.Size(950, 520);
+            this.Controls.Add(this.label5);
+            this.Controls.Add(this.label4);
+            this.Controls.Add(this.numCopies);
+            this.Controls.Add(this.cmbOrientation);
             this.Controls.Add(this.cmbPaperSizes);
             this.Controls.Add(this.label3);
             this.Controls.Add(this.btnCancelSettings);
@@ -127,6 +172,7 @@
             this.Controls.Add(this.label1);
             this.Name = "PrinterSettingsForm";
             this.Text = "PrinterSettingsForm";
+            ((System.ComponentModel.ISupportInitialize)(this.numCopies)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -142,5 +188,9 @@
         private System.Windows.Forms.Button btnCancelSettings;
         private System.Windows.Forms.Label label3;
         private System.Windows.Forms.ComboBox cmbPaperSizes;
+        private System.Windows.Forms.ComboBox cmbOrientation;
+        private System.Windows.Forms.NumericUpDown numCopies;
+        private System.Windows.Forms.Label label4;
+        private System.Windows.Forms.Label label5;
     }
 }

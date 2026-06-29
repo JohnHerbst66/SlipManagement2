@@ -50,6 +50,12 @@
             this.btnSave = new System.Windows.Forms.Button();
             this.btnCancel = new System.Windows.Forms.Button();
             this.btnPrint = new System.Windows.Forms.Button();
+            this.lblField8 = new System.Windows.Forms.Label();
+            this.lblField9 = new System.Windows.Forms.Label();
+            this.lblField10 = new System.Windows.Forms.Label();
+            this.txtField8 = new System.Windows.Forms.TextBox();
+            this.txtField9 = new System.Windows.Forms.TextBox();
+            this.txtField10 = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
             // label1
@@ -156,64 +162,69 @@
             // 
             this.txtSlipID.Location = new System.Drawing.Point(232, 136);
             this.txtSlipID.Name = "txtSlipID";
+            this.txtSlipID.ReadOnly = true;
             this.txtSlipID.Size = new System.Drawing.Size(231, 22);
-            this.txtSlipID.TabIndex = 10;
+            this.txtSlipID.TabIndex = 0;
+            this.txtSlipID.TabStop = false;
             // 
             // txtField1
             // 
             this.txtField1.Location = new System.Drawing.Point(232, 178);
             this.txtField1.Name = "txtField1";
             this.txtField1.Size = new System.Drawing.Size(231, 22);
-            this.txtField1.TabIndex = 11;
+            this.txtField1.TabIndex = 1;
             // 
             // txtField2
             // 
             this.txtField2.Location = new System.Drawing.Point(232, 226);
             this.txtField2.Name = "txtField2";
             this.txtField2.Size = new System.Drawing.Size(231, 22);
-            this.txtField2.TabIndex = 12;
+            this.txtField2.TabIndex = 2;
             // 
             // txtField3
             // 
             this.txtField3.Location = new System.Drawing.Point(232, 265);
             this.txtField3.Name = "txtField3";
             this.txtField3.Size = new System.Drawing.Size(231, 22);
-            this.txtField3.TabIndex = 13;
+            this.txtField3.TabIndex = 3;
             // 
             // txtField4
             // 
             this.txtField4.Location = new System.Drawing.Point(232, 305);
             this.txtField4.Name = "txtField4";
             this.txtField4.Size = new System.Drawing.Size(231, 22);
-            this.txtField4.TabIndex = 14;
+            this.txtField4.TabIndex = 4;
             // 
             // txtField5
             // 
             this.txtField5.Location = new System.Drawing.Point(232, 349);
             this.txtField5.Name = "txtField5";
             this.txtField5.Size = new System.Drawing.Size(231, 22);
-            this.txtField5.TabIndex = 15;
+            this.txtField5.TabIndex = 5;
             // 
             // txtField6
             // 
             this.txtField6.Location = new System.Drawing.Point(232, 399);
             this.txtField6.Name = "txtField6";
             this.txtField6.Size = new System.Drawing.Size(231, 22);
-            this.txtField6.TabIndex = 16;
+            this.txtField6.TabIndex = 6;
             // 
             // txtBilNumber
             // 
             this.txtBilNumber.Location = new System.Drawing.Point(584, 136);
             this.txtBilNumber.Name = "txtBilNumber";
+            this.txtBilNumber.ReadOnly = true;
             this.txtBilNumber.Size = new System.Drawing.Size(231, 22);
-            this.txtBilNumber.TabIndex = 17;
+            this.txtBilNumber.TabIndex = 0;
+            this.txtBilNumber.TabStop = false;
             // 
             // txtField7
             // 
             this.txtField7.Location = new System.Drawing.Point(584, 178);
+            this.txtField7.MaxLength = 6;
             this.txtField7.Name = "txtField7";
             this.txtField7.Size = new System.Drawing.Size(231, 22);
-            this.txtField7.TabIndex = 18;
+            this.txtField7.TabIndex = 7;
             // 
             // btnSave
             // 
@@ -221,7 +232,7 @@
             this.btnSave.Location = new System.Drawing.Point(134, 490);
             this.btnSave.Name = "btnSave";
             this.btnSave.Size = new System.Drawing.Size(137, 62);
-            this.btnSave.TabIndex = 19;
+            this.btnSave.TabIndex = 11;
             this.btnSave.Text = "SAVE";
             this.btnSave.UseVisualStyleBackColor = false;
             this.btnSave.Click += new System.EventHandler(this.btnSave_Click_1);
@@ -232,7 +243,7 @@
             this.btnCancel.Location = new System.Drawing.Point(388, 490);
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(137, 62);
-            this.btnCancel.TabIndex = 20;
+            this.btnCancel.TabIndex = 12;
             this.btnCancel.Text = "CANCEL";
             this.btnCancel.UseVisualStyleBackColor = false;
             this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click_1);
@@ -243,16 +254,73 @@
             this.btnPrint.Location = new System.Drawing.Point(640, 490);
             this.btnPrint.Name = "btnPrint";
             this.btnPrint.Size = new System.Drawing.Size(137, 62);
-            this.btnPrint.TabIndex = 21;
+            this.btnPrint.TabIndex = 13;
             this.btnPrint.Text = "PRINT";
             this.btnPrint.UseVisualStyleBackColor = false;
             this.btnPrint.Click += new System.EventHandler(this.btnPrint_Click_1);
+            // 
+            // lblField8
+            // 
+            this.lblField8.AutoSize = true;
+            this.lblField8.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblField8.Location = new System.Drawing.Point(469, 226);
+            this.lblField8.Name = "lblField8";
+            this.lblField8.Size = new System.Drawing.Size(48, 20);
+            this.lblField8.TabIndex = 22;
+            this.lblField8.Text = "Slot:";
+            // 
+            // lblField9
+            // 
+            this.lblField9.AutoSize = true;
+            this.lblField9.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblField9.Location = new System.Drawing.Point(469, 267);
+            this.lblField9.Name = "lblField9";
+            this.lblField9.Size = new System.Drawing.Size(107, 20);
+            this.lblField9.TabIndex = 23;
+            this.lblField9.Text = "Order Num:";
+            // 
+            // lblField10
+            // 
+            this.lblField10.AutoSize = true;
+            this.lblField10.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblField10.Location = new System.Drawing.Point(469, 305);
+            this.lblField10.Name = "lblField10";
+            this.lblField10.Size = new System.Drawing.Size(89, 20);
+            this.lblField10.TabIndex = 24;
+            this.lblField10.Text = "Remarks:";
+            // 
+            // txtField8
+            // 
+            this.txtField8.Location = new System.Drawing.Point(582, 224);
+            this.txtField8.Name = "txtField8";
+            this.txtField8.Size = new System.Drawing.Size(231, 22);
+            this.txtField8.TabIndex = 8;
+            // 
+            // txtField9
+            // 
+            this.txtField9.Location = new System.Drawing.Point(582, 265);
+            this.txtField9.Name = "txtField9";
+            this.txtField9.Size = new System.Drawing.Size(231, 22);
+            this.txtField9.TabIndex = 9;
+            // 
+            // txtField10
+            // 
+            this.txtField10.Location = new System.Drawing.Point(582, 305);
+            this.txtField10.Name = "txtField10";
+            this.txtField10.Size = new System.Drawing.Size(231, 22);
+            this.txtField10.TabIndex = 10;
             // 
             // CreateSlip
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(960, 625);
+            this.Controls.Add(this.txtField10);
+            this.Controls.Add(this.txtField9);
+            this.Controls.Add(this.txtField8);
+            this.Controls.Add(this.lblField10);
+            this.Controls.Add(this.lblField9);
+            this.Controls.Add(this.lblField8);
             this.Controls.Add(this.btnPrint);
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnSave);
@@ -306,5 +374,11 @@
         private System.Windows.Forms.Button btnSave;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.Button btnPrint;
+        public System.Windows.Forms.Label lblField8;
+        public System.Windows.Forms.Label lblField9;
+        public System.Windows.Forms.Label lblField10;
+        public System.Windows.Forms.TextBox txtField8;
+        public System.Windows.Forms.TextBox txtField9;
+        public System.Windows.Forms.TextBox txtField10;
     }
 }
