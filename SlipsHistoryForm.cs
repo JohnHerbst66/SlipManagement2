@@ -12,6 +12,8 @@ namespace SlipManagement2
         private string currentSelectedBilNumber = "";
         private bool _showVoided = false;
 
+        private Label _gridSummaryLabel;
+
         private Dictionary<string, Label>    viewLabels             = new Dictionary<string, Label>();
         private Dictionary<string, TextBox>  editTextBoxes          = new Dictionary<string, TextBox>();
         private Dictionary<string, ComboBox> dynamicFilterDropdowns = new Dictionary<string, ComboBox>();
@@ -94,15 +96,32 @@ namespace SlipManagement2
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom
                           | AnchorStyles.Left | AnchorStyles.Right;
 
-            // DataGridView — fills panel1 below date pickers + single filter row
+            // DataGridView — fills panel1 below date pickers + single filter row, leaving room for summary
+            const int summaryH = 22;
             int gridTop = dtpFromDate.Bottom + filterRowH + 2;
             dataGridView1.Left   = 0;
             dataGridView1.Top    = gridTop;
             dataGridView1.Width  = panel1.Width;
-            dataGridView1.Height = panel1.Height - gridTop;
+            dataGridView1.Height = panel1.Height - gridTop - summaryH - 2;
             dataGridView1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom
                                  | AnchorStyles.Left | AnchorStyles.Right;
             dataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+
+            _gridSummaryLabel = new Label
+            {
+                Text      = "Total Slips: —   |   Total Tons: —",
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                ForeColor = Color.FromArgb(30, 60, 110),
+                AutoSize  = false,
+                Height    = summaryH,
+                Left      = 0,
+                Width     = panel1.Width,
+                Anchor    = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+            // Position is set after grid is laid out; anchor keeps it stuck to the bottom
+            _gridSummaryLabel.Top = panel1.Height - summaryH;
+            panel1.Controls.Add(_gridSummaryLabel);
         }
 
         // ===================================================================
@@ -341,6 +360,8 @@ namespace SlipManagement2
                 if (dataGridView1.Columns.Contains("PrintedAt"))
                     dataGridView1.Columns["PrintedAt"].Visible = !_showVoided;
 
+                UpdateGridSummary(dt);
+
                 // Re-align filter boxes after column widths are finalised.
                 // Guard: BeginInvoke requires a live window handle (not available during constructor).
                 if (this.IsHandleCreated && !_suppressSync)
@@ -350,6 +371,25 @@ namespace SlipManagement2
             {
                 MessageBox.Show("Error loading history: " + ex.Message);
             }
+        }
+
+        private void UpdateGridSummary(DataTable dt)
+        {
+            if (_gridSummaryLabel == null) return;
+
+            int slipCount = dt?.Rows.Count ?? 0;
+            double totalTons = 0;
+            if (dt != null && dt.Columns.Contains("Field7"))
+            {
+                foreach (DataRow row in dt.Rows)
+                    if (double.TryParse(row["Field7"]?.ToString(),
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture, out double t))
+                        totalTons += t;
+            }
+
+            string tonsField = GetDisplayName("Field7");
+            _gridSummaryLabel.Text = $"Total Slips: {slipCount}   |   Total {tonsField}: {totalTons:F3} t";
         }
 
         // ===================================================================

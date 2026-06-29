@@ -289,6 +289,18 @@ namespace SlipManagement2
             string[] fields = CollectFields();
             fields[6] = NormalizeTons(fields[6]);
 
+            // Field1 (Truck Reg) is always required — spec §4.2/4.4, same strictness as Tons
+            if (string.IsNullOrWhiteSpace(fields[0]))
+            {
+                MessageBox.Show("Truck Reg (Field 1) is required before printing.",
+                    "Required Field", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (_lookupBoxes.ContainsKey("Field1"))
+                    _lookupBoxes["Field1"].Focus();
+                else
+                    txtField1.Focus();
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(fields[6]))
             {
                 MessageBox.Show("Tons must be filled in before printing.",

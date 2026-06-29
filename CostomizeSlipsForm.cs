@@ -201,8 +201,8 @@ namespace SlipManagement2
         {
             string item = chkListRequiredFields.Items[args.Index].ToString();
 
-            // Field7 (Tons) is always required — reject any change
-            if (item.StartsWith("Field7 :"))
+            // Field1 (Truck Reg) and Field7 (Tons) are always required — spec §4.2/4.4
+            if (item.StartsWith("Field1 :") || item.StartsWith("Field7 :"))
             {
                 args.NewValue = args.CurrentValue;
                 return;

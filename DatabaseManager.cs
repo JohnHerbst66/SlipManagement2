@@ -63,6 +63,7 @@ namespace SlipManagement2
                     ExecNQ(conn, @"
                         CREATE TABLE IF NOT EXISTS PrinterProfiles (
                             ProfileID      INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ProfileName    TEXT    NOT NULL DEFAULT '' UNIQUE,
                             PrinterName    TEXT    NOT NULL,
                             Mode           TEXT    NOT NULL,
                             WidthMM        REAL    NOT NULL,
@@ -72,6 +73,8 @@ namespace SlipManagement2
                             MarginRightMM  REAL    NOT NULL DEFAULT 0,
                             MarginBottomMM REAL    NOT NULL DEFAULT 0,
                             NumCopies      INTEGER NOT NULL DEFAULT 1,
+                            Orientation    TEXT    NOT NULL DEFAULT 'Portrait',
+                            SlipLengthIn   REAL    NOT NULL DEFAULT 5.5,
                             IsActive       INTEGER NOT NULL DEFAULT 0
                         );");
 
@@ -88,6 +91,7 @@ namespace SlipManagement2
                     MigrateSchemaIfNeeded(conn);
                     SeedFieldConfigIfEmpty(conn);
                     SeedGlobalSettingsIfEmpty(conn);
+                    SeedPrinterProfileIfEmpty(conn);
                 }
             }
             catch (Exception ex)
@@ -166,6 +170,47 @@ namespace SlipManagement2
             // Backfill Field8/9 lookup tables for databases created before this was added
             ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='OrderNumbers' WHERE FieldSlot='Field8' AND (LookupTable IS NULL OR LookupTable='');");
             ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='Slots'        WHERE FieldSlot='Field9' AND (LookupTable IS NULL OR LookupTable='');");
+
+            // Field1 and Field7 must always be IsRequired=1 — enforce on every startup
+            // so existing databases are corrected regardless of when they were created.
+            ExecNQ(conn, "UPDATE FieldConfig SET IsRequired=1 WHERE FieldSlot='Field1' OR FieldSlot='Field7';");
+
+            // PrinterProfiles migrations — add ProfileName, Orientation, SlipLengthIn columns
+            bool hasProfileName  = false;
+            bool hasOrientation  = false;
+            bool hasSlipLengthIn = false;
+            using (var cmd = new SQLiteCommand("PRAGMA table_info(PrinterProfiles);", conn))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read())
+                {
+                    string col = r["name"].ToString();
+                    if (col.Equals("ProfileName",  StringComparison.OrdinalIgnoreCase)) hasProfileName  = true;
+                    if (col.Equals("Orientation",  StringComparison.OrdinalIgnoreCase)) hasOrientation  = true;
+                    if (col.Equals("SlipLengthIn", StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn = true;
+                }
+
+            if (!hasProfileName)
+            {
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN ProfileName TEXT NOT NULL DEFAULT '';");
+                // Give each existing row a unique name derived from its primary key
+                ExecNQ(conn, "UPDATE PrinterProfiles SET ProfileName = 'Profile ' || ProfileID WHERE ProfileName = '' OR ProfileName IS NULL;");
+                // Rename the active profile to 'Default' when that name isn't already taken
+                ExecNQ(conn, @"UPDATE PrinterProfiles SET ProfileName = 'Default'
+                    WHERE IsActive = 1
+                    AND NOT EXISTS (SELECT 1 FROM PrinterProfiles WHERE ProfileName = 'Default');");
+                // ALTER TABLE ADD COLUMN can't declare UNIQUE in SQLite — add an index instead
+                ExecNQ(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_PrinterProfiles_ProfileName ON PrinterProfiles(ProfileName);");
+            }
+
+            if (!hasOrientation)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN Orientation TEXT NOT NULL DEFAULT 'Portrait';");
+
+            if (!hasSlipLengthIn)
+            {
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipLengthIn REAL NOT NULL DEFAULT 5.5;");
+                // Backfill from stored HeightMM for custom-length profiles
+                ExecNQ(conn, "UPDATE PrinterProfiles SET SlipLengthIn = ROUND(HeightMM / 25.4, 2) WHERE Mode = 'Small240x102' AND HeightMM > 0;");
+            }
         }
 
         private static void SeedFieldConfigIfEmpty(SQLiteConnection conn)
@@ -191,13 +236,16 @@ namespace SlipManagement2
 
             foreach (var (slot, label, order, lookup) in defaults)
             {
+                // Field1 and Field7 are always required — spec §4.2/4.4
+                int isRequired = (slot == "Field1" || slot == "Field7") ? 1 : 0;
                 using (var cmd = new SQLiteCommand(
-                    "INSERT INTO FieldConfig (FieldSlot, LabelName, OrderLine, Hidden, LookupTable) VALUES (@S, @L, @O, 0, @T);", conn))
+                    "INSERT INTO FieldConfig (FieldSlot, LabelName, OrderLine, Hidden, LookupTable, IsRequired) VALUES (@S, @L, @O, 0, @T, @R);", conn))
                 {
                     cmd.Parameters.AddWithValue("@S", slot);
                     cmd.Parameters.AddWithValue("@L", label);
                     cmd.Parameters.AddWithValue("@O", order);
                     cmd.Parameters.AddWithValue("@T", lookup);
+                    cmd.Parameters.AddWithValue("@R", isRequired);
                     cmd.ExecuteNonQuery();
                 }
             }
@@ -230,6 +278,22 @@ namespace SlipManagement2
                     cmd.ExecuteNonQuery();
                 }
             }
+        }
+
+        private static void SeedPrinterProfileIfEmpty(SQLiteConnection conn)
+        {
+            using (var cmd = new SQLiteCommand("SELECT COUNT(*) FROM PrinterProfiles;", conn))
+            {
+                if ((long)cmd.ExecuteScalar() > 0) return;
+            }
+            // 5.5 in × 25.4 = 139.7 mm
+            ExecNQ(conn, @"
+                INSERT INTO PrinterProfiles
+                    (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
+                     MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
+                     NumCopies, Orientation, SlipLengthIn, IsActive)
+                VALUES ('Default', 'EPSON LX-350', 'Small240x102', 240, 139.7,
+                        10, 10, 10, 10, 1, 'Portrait', 5.5, 1);");
         }
 
         // ===================================================================
@@ -602,11 +666,90 @@ namespace SlipManagement2
             return new PrinterProfile();
         }
 
-        // Clears any existing active profile and inserts a new one.
-        public static void SaveActiveProfile(string printerName, string mode,
+        // ---- Named preset data class ----
+        public class PrinterProfileData
+        {
+            public int    ProfileID        { get; set; }
+            public string ProfileName      { get; set; }
+            public string PrinterName      { get; set; }
+            public string PaperSizeProfile { get; set; }
+            public double WidthMM          { get; set; }
+            public double HeightMM         { get; set; }
+            public double MarginTopMM      { get; set; }
+            public double MarginLeftMM     { get; set; }
+            public double MarginRightMM    { get; set; }
+            public double MarginBottomMM   { get; set; }
+            public int    NumCopies        { get; set; }
+            public string Orientation      { get; set; }
+            public double SlipLengthIn     { get; set; }
+            public bool   IsActive         { get; set; }
+        }
+
+        private static PrinterProfileData ReadProfileRow(System.Data.SQLite.SQLiteDataReader r)
+        {
+            return new PrinterProfileData
+            {
+                ProfileID        = Convert.ToInt32(r["ProfileID"]),
+                ProfileName      = r["ProfileName"].ToString(),
+                PrinterName      = r["PrinterName"].ToString(),
+                PaperSizeProfile = r["Mode"].ToString(),
+                WidthMM          = Convert.ToDouble(r["WidthMM"]),
+                HeightMM         = r["HeightMM"] == DBNull.Value ? 0 : Convert.ToDouble(r["HeightMM"]),
+                MarginTopMM      = Convert.ToDouble(r["MarginTopMM"]),
+                MarginLeftMM     = Convert.ToDouble(r["MarginLeftMM"]),
+                MarginRightMM    = Convert.ToDouble(r["MarginRightMM"]),
+                MarginBottomMM   = Convert.ToDouble(r["MarginBottomMM"]),
+                NumCopies        = Convert.ToInt32(r["NumCopies"]),
+                Orientation      = r["Orientation"].ToString(),
+                SlipLengthIn     = Convert.ToDouble(r["SlipLengthIn"]),
+                IsActive         = Convert.ToInt32(r["IsActive"]) == 1,
+            };
+        }
+
+        // Returns all saved presets ordered by name.
+        public static List<PrinterProfileData> GetAllPrinterProfiles()
+        {
+            var list = new List<PrinterProfileData>();
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand("SELECT * FROM PrinterProfiles ORDER BY ProfileName;", conn))
+                    using (var r = cmd.ExecuteReader())
+                        while (r.Read()) list.Add(ReadProfileRow(r));
+                }
+            }
+            catch (Exception ex) { MessageBox.Show("Error loading printer profiles: " + ex.Message); }
+            return list;
+        }
+
+        // Returns one named preset, or null if not found.
+        public static PrinterProfileData GetPrinterProfileByName(string name)
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand("SELECT * FROM PrinterProfiles WHERE ProfileName=@N LIMIT 1;", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        using (var r = cmd.ExecuteReader())
+                            if (r.Read()) return ReadProfileRow(r);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // Upserts a preset by name, marks it active, and syncs GlobalSettings so SlipPrintEngine stays consistent.
+        public static void SaveOrUpdatePrinterProfile(
+            string profileName, string printerName, string paperSizeProfile,
             double widthMM, double heightMM,
             double marginTop, double marginLeft, double marginRight, double marginBottom,
-            int numCopies)
+            int numCopies, string orientation, double slipLengthIn)
         {
             try
             {
@@ -615,25 +758,63 @@ namespace SlipManagement2
                     conn.Open();
                     ExecNQ(conn, "UPDATE PrinterProfiles SET IsActive=0;");
                     const string sql = @"
-                        INSERT INTO PrinterProfiles
-                            (PrinterName, Mode, WidthMM, HeightMM, MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM, NumCopies, IsActive)
-                        VALUES (@P, @M, @W, @H, @T, @L, @R, @B, @C, 1);";
+                        INSERT OR REPLACE INTO PrinterProfiles
+                            (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
+                             MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
+                             NumCopies, Orientation, SlipLengthIn, IsActive)
+                        VALUES (@PN, @P, @M, @W, @H, @T, @L, @R, @B, @C, @O, @SL, 1);";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
-                        cmd.Parameters.AddWithValue("@P", printerName);
-                        cmd.Parameters.AddWithValue("@M", mode);
-                        cmd.Parameters.AddWithValue("@W", widthMM);
-                        cmd.Parameters.AddWithValue("@H", heightMM);
-                        cmd.Parameters.AddWithValue("@T", marginTop);
-                        cmd.Parameters.AddWithValue("@L", marginLeft);
-                        cmd.Parameters.AddWithValue("@R", marginRight);
-                        cmd.Parameters.AddWithValue("@B", marginBottom);
-                        cmd.Parameters.AddWithValue("@C", numCopies);
+                        cmd.Parameters.AddWithValue("@PN", profileName);
+                        cmd.Parameters.AddWithValue("@P",  printerName);
+                        cmd.Parameters.AddWithValue("@M",  paperSizeProfile);
+                        cmd.Parameters.AddWithValue("@W",  widthMM);
+                        cmd.Parameters.AddWithValue("@H",  heightMM);
+                        cmd.Parameters.AddWithValue("@T",  marginTop);
+                        cmd.Parameters.AddWithValue("@L",  marginLeft);
+                        cmd.Parameters.AddWithValue("@R",  marginRight);
+                        cmd.Parameters.AddWithValue("@B",  marginBottom);
+                        cmd.Parameters.AddWithValue("@C",  numCopies);
+                        cmd.Parameters.AddWithValue("@O",  orientation);
+                        cmd.Parameters.AddWithValue("@SL", slipLengthIn);
                         cmd.ExecuteNonQuery();
                     }
                 }
+                SyncGlobalSettingsFromProfile(printerName, paperSizeProfile, orientation, numCopies, slipLengthIn);
             }
             catch (Exception ex) { MessageBox.Show("Error saving printer profile: " + ex.Message); }
+        }
+
+        // Flips IsActive to the named preset and syncs GlobalSettings.
+        public static void SetActiveProfile(string profileName)
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    ExecNQ(conn, "UPDATE PrinterProfiles SET IsActive=0;");
+                    using (var cmd = new SQLiteCommand("UPDATE PrinterProfiles SET IsActive=1 WHERE ProfileName=@N;", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", profileName);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                var data = GetPrinterProfileByName(profileName);
+                if (data != null)
+                    SyncGlobalSettingsFromProfile(data.PrinterName, data.PaperSizeProfile, data.Orientation, data.NumCopies, data.SlipLengthIn);
+            }
+            catch (Exception ex) { MessageBox.Show("Error setting active profile: " + ex.Message); }
+        }
+
+        private static void SyncGlobalSettingsFromProfile(string printerName, string paperSizeProfile,
+            string orientation, int numCopies, double slipLengthIn)
+        {
+            SaveGlobalSetting("SelectedPrinter",  printerName);
+            SaveGlobalSetting("PaperSizeProfile", paperSizeProfile);
+            SaveGlobalSetting("PrintOrientation", orientation);
+            SaveGlobalSetting("PrintCopiesCount", numCopies.ToString());
+            SaveGlobalSetting("SlipCustomLength", slipLengthIn.ToString("G", System.Globalization.CultureInfo.InvariantCulture));
         }
 
         // ===================================================================

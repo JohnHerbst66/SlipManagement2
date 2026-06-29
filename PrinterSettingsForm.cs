@@ -8,86 +8,138 @@ namespace SlipManagement2
 {
     public partial class PrinterSettingsForm : Form
     {
-        // Extra controls added in code (not in designer) — right column
-        private TextBox        txtHeaderTitle;
-        private NumericUpDown  numMarginTop;
-        private NumericUpDown  numMarginLeft;
-        private NumericUpDown  numMarginRight;
-        private NumericUpDown  numMarginBottom;
+        // Right-column controls (built in code)
+        private TextBox       txtHeaderTitle;
+        private NumericUpDown numMarginTop;
+        private NumericUpDown numMarginLeft;
+        private NumericUpDown numMarginRight;
+        private NumericUpDown numMarginBottom;
+
+        // Preset row controls
+        private ComboBox cmbPresets;
+        private Label    lblPresetName;
+        private TextBox  txtPresetName;
+        private bool     _suppressPresetChange;
+
+        private const string NewPresetSentinel = "— New preset... —";
 
         public PrinterSettingsForm()
         {
             InitializeComponent();
-            Text            = "Printer Settings";
-            StartPosition   = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox     = false;
-            ClientSize      = new Size(750, 420);
+            Text          = "Printer Settings";
+            StartPosition = FormStartPosition.CenterParent;
+            MinimumSize   = new Size(870, 500);   // prevents shrinking below where controls clip
 
-            // Right-column wiring: DropDownStyle for printer combo, numCopies bounds
             cmbPrinters.DropDownStyle = ComboBoxStyle.DropDownList;
             numCopies.Minimum = 1;
             numCopies.Maximum = 10;
 
+            BuildPresetRow();
             BuildRightColumn();
             LoadSettingsFromDb();
         }
 
         // ===================================================================
-        // EXTRA CONTROLS (right column)
+        // PRESET ROW  (sits above all designer controls at y < 43)
+        // ===================================================================
+        private void BuildPresetRow()
+        {
+            Controls.Add(new Label
+            {
+                Text      = "Preset:",
+                Location  = new Point(37, 18),
+                AutoSize  = true,
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+            });
+
+            cmbPresets = new ComboBox
+            {
+                Location      = new Point(100, 14),
+                Size          = new Size(220, 24),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font          = new Font("Arial", 9),
+            };
+            cmbPresets.SelectedIndexChanged += OnPresetSelectionChanged;
+            Controls.Add(cmbPresets);
+
+            lblPresetName = new Label
+            {
+                Text     = "Preset name:",
+                Location = new Point(335, 18),
+                AutoSize = true,
+                Visible  = false,
+            };
+            Controls.Add(lblPresetName);
+
+            txtPresetName = new TextBox
+            {
+                Location  = new Point(420, 14),
+                Size      = new Size(240, 22),
+                MaxLength = 50,
+                Visible   = false,
+            };
+            Controls.Add(txtPresetName);
+
+            // Thin separator below the preset row — anchored so it stretches when the form is resized
+            var sep = new Panel
+            {
+                Location  = new Point(0, 42),
+                Size      = new Size(ClientSize.Width, 1),
+                Anchor    = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
+                BackColor = Color.LightGray,
+            };
+            Controls.Add(sep);
+        }
+
+        // ===================================================================
+        // RIGHT COLUMN  (company name, slip length, margins)
         // ===================================================================
         private void BuildRightColumn()
         {
-            const int lx = 390;   // label x
-            const int cx = 560;   // control x
-            const int cw = 160;   // control width
+            const int lx = 430;   // right-column label x — starts well clear of the left column
+            const int cx = 640;   // right-column control x
+            const int cw = 230;   // control width — right edge at 870, safe within 950px form
 
-            AddSectionHeader("Company / Slip",  lx, 20);
+            AddSectionHeader("Company / Slip",     lx, 65);
 
-            AddLabel("Company Name:",            lx, 57);
-            txtHeaderTitle = AddTextBox(cx, 54, cw);
+            AddLabel("Company Name:", lx, 102);
+            txtHeaderTitle = AddTextBox(cx, 99, cw);
 
-            AddLabel("Slip Length (inches):",   lx, 107);
-            // txtSlipLength already exists from designer — we just reposition its label
-
-            AddSectionHeader("Print Margins (mm)", lx, 140);
-
-            AddLabel("Top:",    lx, 166);
-            numMarginTop    = AddMarginSpinner(cx, 163);
-
-            AddLabel("Left:",   lx, 204);
-            numMarginLeft   = AddMarginSpinner(cx, 201);
-
-            AddLabel("Right:",  lx, 242);
-            numMarginRight  = AddMarginSpinner(cx, 239);
-
-            AddLabel("Bottom:", lx, 280);
-            numMarginBottom = AddMarginSpinner(cx, 277);
-
-            // Move txtSlipLength label text and position — it belongs in the right column
-            label2.Text     = "Slip Length (in):";
-            label2.Location = new Point(lx, 107);
-            txtSlipLength.Location = new Point(cx, 104);
+            // label2 from the designer is the slip-length label — relocate it to the right column
+            label2.Text            = "Slip Length (in):";
+            label2.Location        = new Point(lx, 117);
+            txtSlipLength.Location = new Point(cx, 114);
             txtSlipLength.Width    = cw;
+
+            AddSectionHeader("Print Margins (mm)", lx, 155);
+
+            AddLabel("Top:",    lx, 181);
+            numMarginTop    = AddMarginSpinner(cx, 178);
+
+            AddLabel("Left:",   lx, 219);
+            numMarginLeft   = AddMarginSpinner(cx, 216);
+
+            AddLabel("Right:",  lx, 257);
+            numMarginRight  = AddMarginSpinner(cx, 254);
+
+            AddLabel("Bottom:", lx, 295);
+            numMarginBottom = AddMarginSpinner(cx, 292);
         }
 
         private void AddSectionHeader(string text, int x, int y)
         {
-            var lbl = new Label
+            Controls.Add(new Label
             {
                 Text      = text,
                 Location  = new Point(x, y),
                 AutoSize  = true,
                 Font      = new Font("Arial", 9, FontStyle.Bold),
-                ForeColor = Color.DimGray
-            };
-            Controls.Add(lbl);
+                ForeColor = Color.DimGray,
+            });
         }
 
         private void AddLabel(string text, int x, int y)
-        {
-            Controls.Add(new Label { Text = text, Location = new Point(x, y), AutoSize = true });
-        }
+            => Controls.Add(new Label { Text = text, Location = new Point(x, y), AutoSize = true });
 
         private TextBox AddTextBox(int x, int y, int width)
         {
@@ -100,17 +152,111 @@ namespace SlipManagement2
         {
             var n = new NumericUpDown
             {
-                Location       = new Point(x, y),
-                Size           = new Size(90, 22),
-                Minimum        = 0,
-                Maximum        = 50,
-                DecimalPlaces  = 1,
-                Increment      = 0.5m,
-                Value          = 10
+                Location      = new Point(x, y),
+                Size          = new Size(90, 22),
+                Minimum       = 0,
+                Maximum       = 50,
+                DecimalPlaces = 1,
+                Increment     = 0.5m,
+                Value         = 10,
             };
             Controls.Add(n);
             return n;
         }
+
+        // ===================================================================
+        // PRESET MANAGEMENT
+        // ===================================================================
+        private void ReloadPresetCombo(string selectName = null)
+        {
+            _suppressPresetChange = true;
+            try
+            {
+                cmbPresets.Items.Clear();
+                var profiles = DatabaseManager.GetAllPrinterProfiles();
+                string activeName = null;
+                foreach (var p in profiles)
+                {
+                    cmbPresets.Items.Add(p.ProfileName);
+                    if (p.IsActive) activeName = p.ProfileName;
+                }
+                cmbPresets.Items.Add(NewPresetSentinel);
+
+                string target = selectName ?? activeName;
+                if (target != null && cmbPresets.Items.Contains(target))
+                    cmbPresets.SelectedItem = target;
+                else if (cmbPresets.Items.Count > 1)
+                    cmbPresets.SelectedIndex = 0;
+            }
+            finally
+            {
+                _suppressPresetChange = false;
+            }
+
+            ApplySelectedPreset();
+        }
+
+        private void OnPresetSelectionChanged(object sender, EventArgs e)
+        {
+            if (_suppressPresetChange) return;
+            ApplySelectedPreset();
+        }
+
+        private void ApplySelectedPreset()
+        {
+            string selected = cmbPresets.SelectedItem?.ToString();
+            if (selected == null) return;
+
+            bool isNew = selected == NewPresetSentinel;
+            lblPresetName.Visible = isNew;
+            txtPresetName.Visible = isNew;
+
+            if (isNew)
+            {
+                txtPresetName.Text = "";
+                if (cmbPaperSizes.Items.Contains("Small240x102"))
+                    cmbPaperSizes.SelectedItem = "Small240x102";
+                if (cmbOrientation.Items.Contains("Portrait"))
+                    cmbOrientation.SelectedItem = "Portrait";
+                numCopies.Value    = 1;
+                txtSlipLength.Text = "5.5";
+                numMarginTop.Value = numMarginLeft.Value = numMarginRight.Value = numMarginBottom.Value = 10;
+            }
+            else
+            {
+                var data = DatabaseManager.GetPrinterProfileByName(selected);
+                if (data != null)
+                {
+                    LoadPresetValuesToForm(data);
+                    // Selecting an existing preset immediately activates it — spec §6.6
+                    DatabaseManager.SetActiveProfile(selected);
+                }
+            }
+        }
+
+        private void LoadPresetValuesToForm(DatabaseManager.PrinterProfileData data)
+        {
+            if (cmbPrinters.Items.Contains(data.PrinterName))
+                cmbPrinters.SelectedItem = data.PrinterName;
+            else if (cmbPrinters.Items.Count > 0)
+                cmbPrinters.SelectedIndex = 0;
+
+            if (cmbPaperSizes.Items.Contains(data.PaperSizeProfile))
+                cmbPaperSizes.SelectedItem = data.PaperSizeProfile;
+
+            if (cmbOrientation.Items.Contains(data.Orientation))
+                cmbOrientation.SelectedItem = data.Orientation;
+
+            numCopies.Value       = (decimal)Math.Max((double)numCopies.Minimum, Math.Min((double)numCopies.Maximum, data.NumCopies));
+            txtSlipLength.Text    = data.SlipLengthIn.ToString("G", CultureInfo.InvariantCulture);
+            numMarginTop.Value    = ClampMargin(data.MarginTopMM);
+            numMarginLeft.Value   = ClampMargin(data.MarginLeftMM);
+            numMarginRight.Value  = ClampMargin(data.MarginRightMM);
+            numMarginBottom.Value = ClampMargin(data.MarginBottomMM);
+        }
+
+        private decimal ClampMargin(double mm)
+            => (decimal)Math.Max(0, Math.Min((double)numMarginTop.Maximum, mm));
 
         // ===================================================================
         // LOAD / SAVE
@@ -124,43 +270,21 @@ namespace SlipManagement2
                 foreach (string p in PrinterSettings.InstalledPrinters)
                     cmbPrinters.Items.Add(p);
 
-                string savedPrinter = DatabaseManager.GetGlobalSetting("SelectedPrinter", "EPSON LX-350");
-                cmbPrinters.SelectedItem = cmbPrinters.Items.Contains(savedPrinter)
-                    ? savedPrinter
-                    : (cmbPrinters.Items.Count > 0 ? cmbPrinters.Items[0] : null);
-
                 // Paper sizes
                 cmbPaperSizes.Items.Clear();
                 foreach (var s in new[] { "A4", "A5", "A6", "Letter", "Small151x151", "Small240x102" })
                     cmbPaperSizes.Items.Add(s);
 
-                string savedPaper = DatabaseManager.GetGlobalSetting("PaperSizeProfile", "Small240x102");
-                cmbPaperSizes.SelectedItem = cmbPaperSizes.Items.Contains(savedPaper) ? savedPaper : cmbPaperSizes.Items[0];
-
                 // Orientation
                 cmbOrientation.Items.Clear();
                 cmbOrientation.Items.Add("Portrait");
                 cmbOrientation.Items.Add("Landscape");
-                string savedOrientation = DatabaseManager.GetGlobalSetting("PrintOrientation", "Portrait");
-                cmbOrientation.SelectedItem = cmbOrientation.Items.Contains(savedOrientation) ? savedOrientation : cmbOrientation.Items[0];
 
-                // Copies
-                string savedCopies = DatabaseManager.GetGlobalSetting("PrintCopiesCount", "1");
-                if (decimal.TryParse(savedCopies, out decimal copiesVal))
-                    numCopies.Value = Math.Max(numCopies.Minimum, Math.Min(numCopies.Maximum, copiesVal));
-
-                // Slip length
-                txtSlipLength.Text = DatabaseManager.GetGlobalSetting("SlipCustomLength", "5.5");
-
-                // Header title
+                // Header title is global, not per-preset
                 txtHeaderTitle.Text = DatabaseManager.GetGlobalSetting("HeaderTitle", "UITVAL GRONDE PTY (LTD)");
 
-                // Margins from the active printer profile
-                var profile = DatabaseManager.GetActiveProfile();
-                numMarginTop.Value    = (decimal)Math.Min((double)numMarginTop.Maximum,    profile.MarginTopMM);
-                numMarginLeft.Value   = (decimal)Math.Min((double)numMarginLeft.Maximum,   profile.MarginLeftMM);
-                numMarginRight.Value  = (decimal)Math.Min((double)numMarginRight.Maximum,  profile.MarginRightMM);
-                numMarginBottom.Value = (decimal)Math.Min((double)numMarginBottom.Maximum, profile.MarginBottomMM);
+                // Load presets and activate the current one
+                ReloadPresetCombo();
             }
             catch (Exception ex)
             {
@@ -172,14 +296,24 @@ namespace SlipManagement2
         {
             try
             {
-                string printer     = cmbPrinters.SelectedItem?.ToString()     ?? "EPSON LX-350";
-                string paperSize   = cmbPaperSizes.SelectedItem?.ToString()   ?? "Small240x102";
-                string orientation = cmbOrientation.SelectedItem?.ToString()  ?? "Portrait";
-                string copies      = numCopies.Value.ToString();
+                string selected   = cmbPresets.SelectedItem?.ToString();
+                bool   isNew      = selected == NewPresetSentinel;
+                string presetName = isNew ? txtPresetName.Text.Trim() : selected;
+
+                if (string.IsNullOrWhiteSpace(presetName))
+                {
+                    MessageBox.Show("Please enter a name for this preset.", "Preset Name Required",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    if (isNew) txtPresetName.Focus();
+                    return;
+                }
+
+                string printer     = cmbPrinters.SelectedItem?.ToString()    ?? "EPSON LX-350";
+                string paperSize   = cmbPaperSizes.SelectedItem?.ToString()  ?? "Small240x102";
+                string orientation = cmbOrientation.SelectedItem?.ToString() ?? "Portrait";
                 string slipLength  = txtSlipLength.Text.Trim().Replace(',', '.');
                 string headerTitle = txtHeaderTitle.Text.Trim();
 
-                // Validate slip length
                 if (!double.TryParse(slipLength, NumberStyles.Any, CultureInfo.InvariantCulture, out double lenIn) || lenIn <= 0)
                 {
                     MessageBox.Show("Slip Length must be a positive number (inches).", "Validation",
@@ -188,34 +322,32 @@ namespace SlipManagement2
                     return;
                 }
 
-                // Save GlobalSettings
-                DatabaseManager.SaveGlobalSetting("SelectedPrinter",  printer);
-                DatabaseManager.SaveGlobalSetting("PaperSizeProfile", paperSize);
-                DatabaseManager.SaveGlobalSetting("PrintOrientation", orientation);
-                DatabaseManager.SaveGlobalSetting("PrintCopiesCount", copies);
-                DatabaseManager.SaveGlobalSetting("SlipCustomLength", slipLength);
-                DatabaseManager.SaveGlobalSetting("HeaderTitle",      headerTitle);
-
-                // Resolve paper dimensions from the selected profile
                 double wMM = 240, hMM = lenIn * 25.4;
                 switch (paperSize)
                 {
-                    case "A4":           wMM = 210;   hMM = 297;         break;
-                    case "A5":           wMM = 148;   hMM = 210;         break;
-                    case "A6":           wMM = 105;   hMM = 148;         break;
-                    case "Letter":       wMM = 215.9; hMM = 279.4;       break;
-                    case "Small151x151": wMM = 151;   hMM = 151;         break;
+                    case "A4":           wMM = 210;   hMM = 297;          break;
+                    case "A5":           wMM = 148;   hMM = 210;          break;
+                    case "A6":           wMM = 105;   hMM = 148;          break;
+                    case "Letter":       wMM = 215.9; hMM = 279.4;        break;
+                    case "Small151x151": wMM = 151;   hMM = 151;          break;
                     case "Small240x102": wMM = 240;   hMM = lenIn * 25.4; break;
                 }
 
-                // Save PrinterProfiles (active profile)
-                DatabaseManager.SaveActiveProfile(
-                    printer, paperSize, wMM, hMM,
+                // HeaderTitle is global, not preset-specific
+                DatabaseManager.SaveGlobalSetting("HeaderTitle", headerTitle);
+
+                DatabaseManager.SaveOrUpdatePrinterProfile(
+                    presetName, printer, paperSize, wMM, hMM,
                     (double)numMarginTop.Value,
                     (double)numMarginLeft.Value,
                     (double)numMarginRight.Value,
                     (double)numMarginBottom.Value,
-                    (int)numCopies.Value);
+                    (int)numCopies.Value,
+                    orientation,
+                    lenIn);
+
+                // Refresh preset list and re-select the saved preset
+                ReloadPresetCombo(presetName);
 
                 MessageBox.Show("Settings saved.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 Close();

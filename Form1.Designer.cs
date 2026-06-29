@@ -68,6 +68,7 @@ namespace SlipManagement2
             // 
             this.flpSlips.Controls.Add(this.lblSlipsPanel);
             this.flpSlips.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
+            this.flpSlips.AutoScroll = true;
             this.flpSlips.Location = new System.Drawing.Point(12, 230);
             this.flpSlips.Name = "flpSlips";
             this.flpSlips.Size = new System.Drawing.Size(1141, 269);

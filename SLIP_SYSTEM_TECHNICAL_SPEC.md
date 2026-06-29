@@ -123,19 +123,23 @@ CREATE TABLE Destinations  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT
 
 CREATE TABLE PrinterProfiles (
     ProfileID      INTEGER PRIMARY KEY AUTOINCREMENT,
-    PrinterName    TEXT NOT NULL,           -- Windows printer name, e.g. "EPSON LX-350"
-    Mode           TEXT NOT NULL,           -- 'FixedSize' (dot-matrix/cut forms) | 'ContinuousRoll' (thermal)
+    ProfileName    TEXT    NOT NULL DEFAULT '' UNIQUE,  -- human name, e.g. "Default", "Dot Matrix - Small"
+    PrinterName    TEXT    NOT NULL,           -- Windows printer name, e.g. "EPSON LX-350"
+    Mode           TEXT    NOT NULL,           -- paper size profile key: 'Small240x102', 'A4', etc.
     WidthMM        DECIMAL NOT NULL,
-    HeightMM       DECIMAL,                  -- NULL/ignored when Mode = 'ContinuousRoll'
+    HeightMM       DECIMAL,                    -- NULL/ignored for ContinuousRoll
     MarginTopMM    DECIMAL NOT NULL DEFAULT 0,
     MarginLeftMM   DECIMAL NOT NULL DEFAULT 0,
     MarginRightMM  DECIMAL NOT NULL DEFAULT 0,
     MarginBottomMM DECIMAL NOT NULL DEFAULT 0,
-    NumCopies      INTEGER NOT NULL DEFAULT 1,   -- kept as a real setting even for multi-part carbon
-                                                   -- paper; printing N copies in software is still a
-                                                   -- valid distinct use case from carbon-copy duplication.
-    IsActive       INTEGER NOT NULL DEFAULT 0     -- which profile is currently selected/in use
+    NumCopies      INTEGER NOT NULL DEFAULT 1,
+    Orientation    TEXT    NOT NULL DEFAULT 'Portrait',   -- 'Portrait' | 'Landscape'
+    SlipLengthIn   REAL    NOT NULL DEFAULT 5.5,          -- custom slip height in inches (Small240x102 only)
+    IsActive       INTEGER NOT NULL DEFAULT 0             -- exactly one row has IsActive=1 at all times
 );
+-- A "Default" preset row (Small240x102, 10mm margins, 1 copy, Portrait, 5.5 in) is seeded
+-- automatically on first run so the app always has a usable active profile, even if the
+-- operator skips Printer Settings during First-Time Setup.
 
 CREATE TABLE GlobalSettings (
     SettingKey   TEXT PRIMARY KEY,    -- e.g. 'HeaderTitle', 'LogoPath'
@@ -247,9 +251,12 @@ Every row that ever receives a SlipID must remain queryable forever, in one of e
 ### 6.0 First-Time Setup (appears exactly once)
 
 - Triggered when the app starts and the SQLite database file does not yet exist on disk.
-- Collects: company header text, logo image path (file picker), initial printer selection, initial paper size/profile.
-- "Finish Setup" button: creates the database (all tables + the `BillNumber` trigger), inserts default `FieldConfig` rows matching Section 4.2's default labels, saves the company/printer settings entered, then opens the Main Page.
-- Never shown again after this — every subsequent launch checks "does the DB file exist" and goes straight to Main Page if so.
+- Collects: company header text, logo image path (optional file picker), default printer (dropdown of installed printers), paper size (same options as Printer Settings), and slip length in inches (shown only when `Small240x102` is selected).
+- **Slip length validation:** if the paper size is `Small240x102`, the slip length field must contain a positive number before "Get Started" is allowed to proceed; a clear inline message is shown on failure.
+- **Save as preset checkbox** (checked by default): if ticked, the entered printer/paper/slip-length values are saved as a named printer preset (name defaults to `"Default"`). If unticked, the seeded `"Default"` preset from `SeedPrinterProfileIfEmpty` remains in place as the active fallback.
+- **"Customize Fields..." button:** opens `CustomizeSlipsForm` as a non-blocking dialog from within setup. The default field labels remain untouched unless the operator actively changes something. This button is an optional shortcut, not a required step.
+- "Get Started" button: creates the database (all tables + the `BillNumber` trigger), inserts default `FieldConfig` rows, saves company/logo/printer settings, creates the named preset (if checked), then closes the form so `Program.cs` can open the Main Page.
+- Never shown again — every subsequent launch checks "does the DB file exist" and goes straight to Main Page.
 - Everything chosen here remains editable later via Customize Slips / Printer Settings.
 
 ### 6.1 Main Page
@@ -294,9 +301,13 @@ Every row that ever receives a SlipID must remain queryable forever, in one of e
 
 ### 6.6 Printer Settings
 
-- **Simple view** (everyday use): printer dropdown (from `PrinterSettings.InstalledPrinters`), paper size/profile, orientation, number of copies.
-- **Advanced view** (installer/maintainer use): exact margins (mm), custom width/height for `FixedSize` mode, a `FixedSize` vs `ContinuousRoll` mode toggle, and a **Calibration / Test Print** button that prints a ruled grid/crosshair pattern so margins can be measured and tuned against the actual physical printer on-site.
-- Settings save into a named `PrinterProfile` row (`IsActive` flag marks which one is current) — not a single flat set of global values, so multiple printers/profiles can be saved and switched between as the company tests hardware.
+- **Preset row** (top of the form): a `ComboBox` listing all named presets plus a `"— New preset... —"` option.
+  - Selecting an **existing preset** loads its values into the form fields and immediately sets it as the active preset in the database (GlobalSettings are synced so `SlipPrintEngine` picks up the change).
+  - Selecting `"— New preset... —"` reveals a name text-box and populates sensible defaults. The name field determines whether Save creates a new row or updates an existing one — no separate "Save As" control is needed.
+- **Form fields** (both columns): printer (from `PrinterSettings.InstalledPrinters`), paper size profile, orientation, number of copies, slip length (inches), print margins (mm ×4), company/header name.
+- **Save button**: validates slip length, resolves paper dimensions, calls `SaveOrUpdatePrinterProfile` (upsert by `ProfileName`), then re-selects the saved preset in the dropdown. Company name (`HeaderTitle`) is saved to GlobalSettings since it is global, not per-preset.
+- Settings are stored in `PrinterProfiles` (one row per named preset, `IsActive=1` marks the current selection). GlobalSettings are kept in sync after every save or preset selection so `SlipPrintEngine` can continue reading from GlobalSettings without modification.
+- A **Calibration / Test Print** button (planned, not yet implemented) will print a ruled grid so margins can be measured on-site.
 
 ---
 
