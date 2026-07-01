@@ -213,19 +213,33 @@ namespace SlipManagement2
                 MaximizeBox = false, MinimizeBox = false
             })
             {
-                var lbl    = new Label  { Text = "Reason (max 20 characters):", Left = 12, Top = 16, AutoSize = true };
-                var txt    = new TextBox { Left = 12, Top = 38, Width = 316, MaxLength = 20 };
+                var lbl    = new Label  { Text = "Reason:", Left = 12, Top = 16, AutoSize = true };
+                var txt    = new TextBox { Left = 12, Top = 38, Width = 316, MaxLength = 200 };
                 var ok     = new Button { Text = "Void Slip", Left = 75,  Top = 80, Width = 105,
                                           BackColor = Color.Tomato, FlatStyle = FlatStyle.Flat,
-                                          DialogResult = DialogResult.OK };
+                                          DialogResult = DialogResult.None };
                 var cancel = new Button { Text = "Cancel", Left = 195, Top = 80, Width = 80,
                                           DialogResult = DialogResult.Cancel };
+
+                // Validate inline — dialog stays open until reason is entered or user cancels
+                ok.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(txt.Text))
+                    {
+                        MessageBox.Show(
+                            "A void reason is required.\n\nPlease enter a reason before continuing, or click Cancel to abort.",
+                            "Reason Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        txt.Focus();
+                        return;
+                    }
+                    dialog.DialogResult = DialogResult.OK;
+                };
 
                 dialog.Controls.AddRange(new Control[] { lbl, txt, ok, cancel });
                 dialog.AcceptButton = ok;
                 dialog.CancelButton = cancel;
 
-                if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(txt.Text))
+                if (dialog.ShowDialog(this) == DialogResult.OK)
                     return txt.Text.Trim();
                 return null;
             }
