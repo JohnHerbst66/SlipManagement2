@@ -523,26 +523,24 @@ namespace SlipManagement2
                 var lbl = new Label  { Text = prompt, Location = new Point(12, 12), AutoSize = false,
                                        Size = new Size(356, 60), Font = new Font("Arial", 9) };
                 var txt = new TextBox { Location = new Point(12, 80), Size = new Size(356, 22),
-                                        Font = new Font("Arial", 9), MaxLength = 20 };
-                var btnOk     = new Button { Text = "OK",     DialogResult = DialogResult.OK,
-                                             Location = new Point(196, 116), Size = new Size(80, 28),
-                                             Enabled = false };
+                                        Font = new Font("Arial", 9), MaxLength = 200 };
+                var btnOk     = new Button { Text = "OK",     DialogResult = DialogResult.None,
+                                             Location = new Point(196, 116), Size = new Size(80, 28) };
                 var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel,
                                              Location = new Point(288, 116), Size = new Size(80, 28) };
 
-                // Reason is mandatory — keep OK disabled until the operator types something
-                txt.TextChanged += (s, e) => { btnOk.Enabled = !string.IsNullOrWhiteSpace(txt.Text); };
-
-                // Belt-and-suspenders: block close if OK is somehow triggered with empty text
-                dlg.FormClosing += (s, e2) =>
+                // OK validates inline — dialog stays open until a reason is given or user cancels
+                btnOk.Click += (s, e) =>
                 {
-                    if (dlg.DialogResult == DialogResult.OK && string.IsNullOrWhiteSpace(txt.Text))
+                    if (string.IsNullOrWhiteSpace(txt.Text))
                     {
-                        e2.Cancel = true;
-                        MessageBox.Show("A reason is required to void a slip.", "Void Slip",
-                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show(
+                            "A void reason is required.\n\nPlease enter a reason before continuing, or click Cancel to abort.",
+                            "Reason Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         txt.Focus();
+                        return;
                     }
+                    dlg.DialogResult = DialogResult.OK;
                 };
 
                 dlg.Controls.AddRange(new Control[] { lbl, txt, btnOk, btnCancel });
