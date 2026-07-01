@@ -533,6 +533,18 @@ namespace SlipManagement2
                 // Reason is mandatory — keep OK disabled until the operator types something
                 txt.TextChanged += (s, e) => { btnOk.Enabled = !string.IsNullOrWhiteSpace(txt.Text); };
 
+                // Belt-and-suspenders: block close if OK is somehow triggered with empty text
+                dlg.FormClosing += (s, e2) =>
+                {
+                    if (dlg.DialogResult == DialogResult.OK && string.IsNullOrWhiteSpace(txt.Text))
+                    {
+                        e2.Cancel = true;
+                        MessageBox.Show("A reason is required to void a slip.", "Void Slip",
+                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        txt.Focus();
+                    }
+                };
+
                 dlg.Controls.AddRange(new Control[] { lbl, txt, btnOk, btnCancel });
                 dlg.AcceptButton = btnOk;
                 dlg.CancelButton = btnCancel;
