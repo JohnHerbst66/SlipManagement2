@@ -8,8 +8,8 @@ namespace SlipManagement2
     {
         private TextBox txtCompanyHeader;
         private TextBox txtLogoPath;
-        private CheckedListBox chkListSlipFields;
-        private CheckedListBox chkListRequiredFields;
+        private Panel pnlSlipFields;
+        private Panel pnlRequiredFields;
         private bool _loadingChecklists = false;
 
         public CustomizeSlipsForm()
@@ -30,7 +30,7 @@ namespace SlipManagement2
             {
                 // Instruction banner — 52px gives 2 lines enough room at 100-150% DPI
                 const int bannerH = 52;
-                const int hintH   = 22;  // "Type here ↓" row
+                const int hintH   = 22;
                 const int gapH    = 4;
 
                 var lblHint = new Label
@@ -48,12 +48,11 @@ namespace SlipManagement2
                 };
                 tabFieldSetup.Controls.Add(lblHint);
 
-                // "Type here ↓" floats just above the Label Name column header
                 var lblTypeHere = new Label
                 {
-                    Text     = "Type here  ↓",
-                    AutoSize = true,
-                    Font     = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold | System.Drawing.FontStyle.Italic),
+                    Text      = "Type here  ↓",
+                    AutoSize  = true,
+                    Font      = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold | System.Drawing.FontStyle.Italic),
                     ForeColor = System.Drawing.Color.FromArgb(180, 0, 0),
                 };
                 tabFieldSetup.Controls.Add(lblTypeHere);
@@ -62,7 +61,6 @@ namespace SlipManagement2
                 dgvFieldSetup.Top    += totalShift;
                 dgvFieldSetup.Height -= totalShift;
 
-                // Align hint over the Label Name column; recalculates when the grid is resized
                 void PositionTypeHereHint()
                 {
                     int dataW   = dgvFieldSetup.Width - dgvFieldSetup.RowHeadersWidth;
@@ -78,8 +76,6 @@ namespace SlipManagement2
                 dgvFieldSetup.AllowUserToAddRows    = false;
                 dgvFieldSetup.AllowUserToDeleteRows = false;
 
-                // Only show Database Slot (read-only reference) and Label Name (editable).
-                // Order Line, Hidden, and Required are managed elsewhere.
                 foreach (DataGridViewColumn col in dgvFieldSetup.Columns)
                 {
                     switch (col.Name)
@@ -98,7 +94,6 @@ namespace SlipManagement2
                     }
                 }
 
-                // Enforce 14-char max on Label Name column via the editing TextBox
                 dgvFieldSetup.EditingControlShowing += DgvFieldSetup_EditingControlShowing;
             }
             catch (Exception ex)
@@ -127,12 +122,24 @@ namespace SlipManagement2
             btnBrowse.Click += BtnBrowse_Click;
 
             Label lblChecklist = new Label() { Text = "Select which fields print on the final slip:", Location = new System.Drawing.Point(20, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
-            chkListSlipFields = new CheckedListBox() { Location = new System.Drawing.Point(20, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
-            chkListSlipFields.ItemCheck += ChkListSlipFields_ItemCheck;
+            pnlSlipFields = new Panel()
+            {
+                Location    = new System.Drawing.Point(20, 175),
+                Size        = new System.Drawing.Size(350, 200),
+                AutoScroll  = true,
+                BorderStyle = BorderStyle.Fixed3D,
+                BackColor   = System.Drawing.SystemColors.Window
+            };
 
             Label lblRequired = new Label() { Text = "Select which fields are required before printing:", Location = new System.Drawing.Point(520, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
-            chkListRequiredFields = new CheckedListBox() { Location = new System.Drawing.Point(520, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
-            chkListRequiredFields.ItemCheck += ChkListRequiredFields_ItemCheck;
+            pnlRequiredFields = new Panel()
+            {
+                Location    = new System.Drawing.Point(520, 175),
+                Size        = new System.Drawing.Size(350, 200),
+                AutoScroll  = true,
+                BorderStyle = BorderStyle.Fixed3D,
+                BackColor   = System.Drawing.SystemColors.Window
+            };
 
             Label lblSlipNote = new Label()
             {
@@ -157,9 +164,9 @@ namespace SlipManagement2
             tabSlipDesign.Controls.Add(txtLogoPath);
             tabSlipDesign.Controls.Add(btnBrowse);
             tabSlipDesign.Controls.Add(lblChecklist);
-            tabSlipDesign.Controls.Add(chkListSlipFields);
+            tabSlipDesign.Controls.Add(pnlSlipFields);
             tabSlipDesign.Controls.Add(lblRequired);
-            tabSlipDesign.Controls.Add(chkListRequiredFields);
+            tabSlipDesign.Controls.Add(pnlRequiredFields);
             tabSlipDesign.Controls.Add(lblSlipNote);
             tabSlipDesign.Controls.Add(lblReqNote);
         }
@@ -192,13 +199,9 @@ namespace SlipManagement2
         {
             try
             {
-                // Tab 1 — save grid edits back to FieldConfig
                 DatabaseManager.SaveFieldConfigFromDataTable((DataTable)dgvFieldSetup.DataSource);
-
-                // Tab 2 — save branding settings
                 DatabaseManager.SaveGlobalSetting("HeaderTitle", txtCompanyHeader.Text.Trim());
                 DatabaseManager.SaveGlobalSetting("LogoPath",    txtLogoPath.Text.Trim());
-                // Tab 2 checklist writes directly to the DataTable above — no separate save needed
 
                 MessageBox.Show("Configuration saved successfully.", "Saved");
                 this.DialogResult = DialogResult.OK;
@@ -210,29 +213,55 @@ namespace SlipManagement2
             }
         }
 
-        // Rebuild checklists from current DataTable state — called on form load and on tab switch
+        // Rebuild checkbox panels from current DataTable state
         private void RefreshChecklistFromGrid()
         {
             DataTable dt = (DataTable)dgvFieldSetup.DataSource;
             if (dt == null) return;
 
-            dgvFieldSetup.EndEdit(); // commit any in-progress cell edit before reading
+            dgvFieldSetup.EndEdit();
 
-            // Suppress ItemCheck handlers during programmatic loading — WinForms fires ItemCheck
-            // when Items.Add() is called with a pre-checked state, which would trigger spurious popups.
             _loadingChecklists = true;
             try
             {
-                chkListSlipFields.Items.Clear();
-                chkListRequiredFields.Items.Clear();
+                pnlSlipFields.Controls.Clear();
+                pnlRequiredFields.Controls.Clear();
+
+                int y = 4;
                 foreach (DataRow row in dt.Rows)
                 {
                     string slot     = row["Database Slot"].ToString();
                     string label    = row["Label Name"].ToString();
                     bool   visible  = Convert.ToInt32(row["Hidden (1=Yes)"])   == 0;
                     bool   required = Convert.ToInt32(row["Required (1=Yes)"]) == 1;
-                    chkListSlipFields.Items.Add($"{slot} : {label}", visible);
-                    chkListRequiredFields.Items.Add($"{slot} : {label}", required);
+                    bool   locked   = slot == "Field1" || slot == "Field7";
+                    string text     = $"{slot} : {label}";
+
+                    var chkVisible = new CheckBox()
+                    {
+                        Text     = text,
+                        Location = new System.Drawing.Point(4, y),
+                        AutoSize = true,
+                        Checked  = visible,
+                        Enabled  = !locked,
+                        Tag      = slot
+                    };
+                    if (!locked) chkVisible.CheckedChanged += ChkVisible_CheckedChanged;
+                    pnlSlipFields.Controls.Add(chkVisible);
+
+                    var chkRequired = new CheckBox()
+                    {
+                        Text     = text,
+                        Location = new System.Drawing.Point(4, y),
+                        AutoSize = true,
+                        Checked  = required,
+                        Enabled  = !locked,
+                        Tag      = slot
+                    };
+                    if (!locked) chkRequired.CheckedChanged += ChkRequired_CheckedChanged;
+                    pnlRequiredFields.Controls.Add(chkRequired);
+
+                    y += 22;
                 }
             }
             finally
@@ -241,40 +270,24 @@ namespace SlipManagement2
             }
         }
 
-        // Refresh checklist every time the user switches to Tab 2
         private void TbcCustomize_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (tbcCustomize.SelectedTab == tabSlipDesign)
                 RefreshChecklistFromGrid();
         }
 
-        // Checkbox change → update DataTable so Tab 1 and the save path see it
-        private void ChkListSlipFields_ItemCheck(object sender, ItemCheckEventArgs args)
+        private void ChkVisible_CheckedChanged(object sender, EventArgs e)
         {
             if (_loadingChecklists) return;
-
-            string item = chkListSlipFields.Items[args.Index].ToString();
-
-            // Field1 and Field7 are mandatory — reject any change and explain why
-            if (item.StartsWith("Field1 :") || item.StartsWith("Field7 :"))
-            {
-                args.NewValue = args.CurrentValue;
-                this.BeginInvoke(new Action(() =>
-                    MessageBox.Show(
-                        "Field1 (Truck Reg) and Field7 (Tons/Weight) are required system fields.\r\n" +
-                        "They are always printed on slips and cannot be hidden.",
-                        "Field Locked", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-                return;
-            }
-
-            string fieldSlot = item.Split(':')[0].Trim();
-            int newHidden = args.NewValue == CheckState.Checked ? 0 : 1;
+            var chk      = (CheckBox)sender;
+            string slot  = chk.Tag.ToString();
+            int newHidden = chk.Checked ? 0 : 1;
 
             DataTable dt = (DataTable)dgvFieldSetup.DataSource;
             if (dt == null) return;
             foreach (DataRow row in dt.Rows)
             {
-                if (row["Database Slot"].ToString() == fieldSlot)
+                if (row["Database Slot"].ToString() == slot)
                 {
                     row["Hidden (1=Yes)"] = newHidden;
                     break;
@@ -282,32 +295,18 @@ namespace SlipManagement2
             }
         }
 
-        private void ChkListRequiredFields_ItemCheck(object sender, ItemCheckEventArgs args)
+        private void ChkRequired_CheckedChanged(object sender, EventArgs e)
         {
             if (_loadingChecklists) return;
-
-            string item = chkListRequiredFields.Items[args.Index].ToString();
-
-            // Field1 (Truck Reg) and Field7 (Tons) are always required — spec §4.2/4.4
-            if (item.StartsWith("Field1 :") || item.StartsWith("Field7 :"))
-            {
-                args.NewValue = args.CurrentValue;
-                this.BeginInvoke(new Action(() =>
-                    MessageBox.Show(
-                        "Field1 (Truck Reg) and Field7 (Tons/Weight) are required system fields.\r\n" +
-                        "They must always be filled in before printing and cannot be made optional.",
-                        "Field Locked", MessageBoxButtons.OK, MessageBoxIcon.Information)));
-                return;
-            }
-
-            string fieldSlot  = item.Split(':')[0].Trim();
-            int    newRequired = args.NewValue == CheckState.Checked ? 1 : 0;
+            var chk       = (CheckBox)sender;
+            string slot   = chk.Tag.ToString();
+            int newRequired = chk.Checked ? 1 : 0;
 
             DataTable dt = (DataTable)dgvFieldSetup.DataSource;
             if (dt == null) return;
             foreach (DataRow row in dt.Rows)
             {
-                if (row["Database Slot"].ToString() == fieldSlot)
+                if (row["Database Slot"].ToString() == slot)
                 {
                     row["Required (1=Yes)"] = newRequired;
                     break;
