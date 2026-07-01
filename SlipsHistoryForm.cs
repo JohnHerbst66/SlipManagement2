@@ -523,7 +523,7 @@ namespace SlipManagement2
                 var lbl = new Label  { Text = prompt, Location = new Point(12, 12), AutoSize = false,
                                        Size = new Size(356, 60), Font = new Font("Arial", 9) };
                 var txt = new TextBox { Location = new Point(12, 80), Size = new Size(356, 22),
-                                        Font = new Font("Arial", 9), MaxLength = 200 };
+                                        Font = new Font("Arial", 9), MaxLength = 20 };
                 var btnOk     = new Button { Text = "OK",     DialogResult = DialogResult.None,
                                              Location = new Point(196, 116), Size = new Size(80, 28) };
                 var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel,

@@ -403,6 +403,7 @@ namespace SlipManagement2
         // Voids a Printed slip from the history form; returns true if a row was affected.
         public static bool VoidPrintedSlip(int slipId, string reason)
         {
+            if (reason != null && reason.Length > 20) reason = reason.Substring(0, 20);
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
@@ -427,6 +428,7 @@ namespace SlipManagement2
         // Sets Status='Voided'; only transitions from Unprinted. Reason is mandatory (max 20 chars per spec).
         public static void VoidSlip(int slipId, string reason)
         {
+            if (reason != null && reason.Length > 20) reason = reason.Substring(0, 20);
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))

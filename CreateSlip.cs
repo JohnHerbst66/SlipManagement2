@@ -214,7 +214,7 @@ namespace SlipManagement2
             })
             {
                 var lbl    = new Label  { Text = "Reason:", Left = 12, Top = 16, AutoSize = true };
-                var txt    = new TextBox { Left = 12, Top = 38, Width = 316, MaxLength = 200 };
+                var txt    = new TextBox { Left = 12, Top = 38, Width = 316, MaxLength = 20 };
                 var ok     = new Button { Text = "Void Slip", Left = 75,  Top = 80, Width = 105,
                                           BackColor = Color.Tomato, FlatStyle = FlatStyle.Flat,
                                           DialogResult = DialogResult.None };
