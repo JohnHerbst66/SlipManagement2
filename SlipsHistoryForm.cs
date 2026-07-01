@@ -404,6 +404,8 @@ namespace SlipManagement2
 
             viewLabels["SlipID"].Text     = "Slip ID: "     + (row.Cells["SlipID"].Value?.ToString() ?? "");
             viewLabels["BillNumber"].Text = "Bill Number: " + currentSelectedBilNumber;
+            if (editTextBoxes.ContainsKey("SlipID"))
+                editTextBoxes["SlipID"].Text = row.Cells["SlipID"].Value?.ToString() ?? "";
 
             for (int i = 1; i <= 10; i++)
             {
@@ -513,18 +515,23 @@ namespace SlipManagement2
                 dlg.Text            = "Void Slip";
                 dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dlg.StartPosition   = FormStartPosition.CenterParent;
-                dlg.ClientSize      = new Size(380, 140);
+                dlg.ClientSize      = new Size(380, 162);
                 dlg.MaximizeBox     = false;
                 dlg.MinimizeBox     = false;
 
+                // Height 60 fits the 3-line prompt (two explicit \n lines at Arial 9pt ~18px each)
                 var lbl = new Label  { Text = prompt, Location = new Point(12, 12), AutoSize = false,
-                                       Size = new Size(356, 40), Font = new Font("Arial", 9) };
-                var txt = new TextBox { Location = new Point(12, 58), Size = new Size(356, 22),
+                                       Size = new Size(356, 60), Font = new Font("Arial", 9) };
+                var txt = new TextBox { Location = new Point(12, 80), Size = new Size(356, 22),
                                         Font = new Font("Arial", 9), MaxLength = 20 };
                 var btnOk     = new Button { Text = "OK",     DialogResult = DialogResult.OK,
-                                             Location = new Point(196, 100), Size = new Size(80, 28) };
+                                             Location = new Point(196, 116), Size = new Size(80, 28),
+                                             Enabled = false };
                 var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel,
-                                             Location = new Point(288, 100), Size = new Size(80, 28) };
+                                             Location = new Point(288, 116), Size = new Size(80, 28) };
+
+                // Reason is mandatory — keep OK disabled until the operator types something
+                txt.TextChanged += (s, e) => { btnOk.Enabled = !string.IsNullOrWhiteSpace(txt.Text); };
 
                 dlg.Controls.AddRange(new Control[] { lbl, txt, btnOk, btnCancel });
                 dlg.AcceptButton = btnOk;
@@ -630,6 +637,15 @@ namespace SlipManagement2
 
             yPos = 8;
             TabPage tab2 = tabControl1.TabPages[1];
+
+            // SlipID — read-only reference, mirrors CreateSlip.cs txtSlipID.ReadOnly = true
+            var lblSlipIdEdit = new Label   { Text = GetDisplayName("SlipID") + ":", Location = new Point(10, yPos), AutoSize = true, Font = smallFont };
+            var txtSlipIdEdit = new TextBox { Location = new Point(120, yPos - 2), Size = new Size(200, 19), Font = smallFont, ReadOnly = true };
+            editTextBoxes.Add("SlipID", txtSlipIdEdit);
+            tab2.Controls.Add(lblSlipIdEdit);
+            tab2.Controls.Add(txtSlipIdEdit);
+            yPos += 22;
+
             foreach (var key in editKeys)
             {
                 var lblDesc = new Label  { Text = GetDisplayName(key) + ":", Location = new Point(10, yPos), AutoSize = true, Font = smallFont };

@@ -10,6 +10,7 @@ namespace SlipManagement2
         private TextBox txtLogoPath;
         private CheckedListBox chkListSlipFields;
         private CheckedListBox chkListRequiredFields;
+        private bool _loadingChecklists = false;
 
         public CustomizeSlipsForm()
         {
@@ -27,26 +28,73 @@ namespace SlipManagement2
         {
             try
             {
+                // Instruction banner — 52px gives 2 lines enough room at 100-150% DPI
+                const int bannerH = 52;
+                const int hintH   = 22;  // "Type here ↓" row
+                const int gapH    = 4;
+
+                var lblHint = new Label
+                {
+                    Text      = "Edit the Label Name column to rename fields shown throughout the application.\r\n" +
+                                "Database Slot is for reference only and cannot be changed. To control field visibility and required settings, use the Slip Design tab.",
+                    Location  = new System.Drawing.Point(dgvFieldSetup.Left, 6),
+                    AutoSize  = false,
+                    Size      = new System.Drawing.Size(dgvFieldSetup.Width, bannerH),
+                    Font      = new System.Drawing.Font("Arial", 9),
+                    ForeColor = System.Drawing.Color.FromArgb(30, 60, 110),
+                    Anchor    = System.Windows.Forms.AnchorStyles.Top
+                              | System.Windows.Forms.AnchorStyles.Left
+                              | System.Windows.Forms.AnchorStyles.Right,
+                };
+                tabFieldSetup.Controls.Add(lblHint);
+
+                // "Type here ↓" floats just above the Label Name column header
+                var lblTypeHere = new Label
+                {
+                    Text     = "Type here  ↓",
+                    AutoSize = true,
+                    Font     = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold | System.Drawing.FontStyle.Italic),
+                    ForeColor = System.Drawing.Color.FromArgb(180, 0, 0),
+                };
+                tabFieldSetup.Controls.Add(lblTypeHere);
+
+                int totalShift = bannerH + hintH + gapH;
+                dgvFieldSetup.Top    += totalShift;
+                dgvFieldSetup.Height -= totalShift;
+
+                // Align hint over the Label Name column; recalculates when the grid is resized
+                void PositionTypeHereHint()
+                {
+                    int dataW   = dgvFieldSetup.Width - dgvFieldSetup.RowHeadersWidth;
+                    int colLeft = dgvFieldSetup.Left + dgvFieldSetup.RowHeadersWidth + dataW / 2;
+                    lblTypeHere.Location = new System.Drawing.Point(colLeft + 8, dgvFieldSetup.Top - hintH - 2);
+                }
+                PositionTypeHereHint();
+                dgvFieldSetup.Resize += (s, e) => PositionTypeHereHint();
+
                 dgvFieldSetup.DataSource = DatabaseManager.GetFieldConfigAsDataTable();
 
                 dgvFieldSetup.AutoSizeColumnsMode  = DataGridViewAutoSizeColumnsMode.Fill;
                 dgvFieldSetup.AllowUserToAddRows    = false;
                 dgvFieldSetup.AllowUserToDeleteRows = false;
-                if (dgvFieldSetup.Columns.Contains("Database Slot"))
-                    dgvFieldSetup.Columns["Database Slot"].ReadOnly = true;
 
-                // Required is managed by the checklist on the Slip Design tab — hide from grid
-                if (dgvFieldSetup.Columns.Contains("Required (1=Yes)"))
-                    dgvFieldSetup.Columns["Required (1=Yes)"].Visible = false;
-
-                // Field1 (Truck Reg) and Field7 (Tons) can never be hidden — spec §4.5
-                if (dgvFieldSetup.Columns.Contains("Hidden (1=Yes)"))
+                // Only show Database Slot (read-only reference) and Label Name (editable).
+                // Order Line, Hidden, and Required are managed elsewhere.
+                foreach (DataGridViewColumn col in dgvFieldSetup.Columns)
                 {
-                    foreach (DataGridViewRow row in dgvFieldSetup.Rows)
+                    switch (col.Name)
                     {
-                        string slot = row.Cells["Database Slot"].Value?.ToString() ?? "";
-                        if (slot == "Field1" || slot == "Field7")
-                            row.Cells["Hidden (1=Yes)"].ReadOnly = true;
+                        case "Label Name":
+                            col.Visible  = true;
+                            col.ReadOnly = false;
+                            break;
+                        case "Database Slot":
+                            col.Visible  = true;
+                            col.ReadOnly = true;
+                            break;
+                        default:
+                            col.Visible = false;
+                            break;
                     }
                 }
 
@@ -82,9 +130,26 @@ namespace SlipManagement2
             chkListSlipFields = new CheckedListBox() { Location = new System.Drawing.Point(20, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
             chkListSlipFields.ItemCheck += ChkListSlipFields_ItemCheck;
 
-            Label lblRequired = new Label() { Text = "Select which fields are required before printing:", Location = new System.Drawing.Point(420, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
-            chkListRequiredFields = new CheckedListBox() { Location = new System.Drawing.Point(420, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
+            Label lblRequired = new Label() { Text = "Select which fields are required before printing:", Location = new System.Drawing.Point(520, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
+            chkListRequiredFields = new CheckedListBox() { Location = new System.Drawing.Point(520, 175), Size = new System.Drawing.Size(350, 200), CheckOnClick = true };
             chkListRequiredFields.ItemCheck += ChkListRequiredFields_ItemCheck;
+
+            Label lblSlipNote = new Label()
+            {
+                Text      = "*Field1(Truck Reg) and Field7(Tons/Weight) are always printed and cannot be unchecked.",
+                Location  = new System.Drawing.Point(20, 380),
+                AutoSize  = true,
+                Font      = new System.Drawing.Font("Arial", 8, System.Drawing.FontStyle.Italic),
+                ForeColor = System.Drawing.Color.FromArgb(120, 80, 0),
+            };
+            Label lblReqNote = new Label()
+            {
+                Text      = "* Field1 (Truck Reg) and Field7 (Tons/Weight) are always required and cannot be unchecked.",
+                Location  = new System.Drawing.Point(520, 380),
+                AutoSize  = true,
+                Font      = new System.Drawing.Font("Arial", 8, System.Drawing.FontStyle.Italic),
+                ForeColor = System.Drawing.Color.FromArgb(120, 80, 0),
+            };
 
             tabSlipDesign.Controls.Add(lblHeader);
             tabSlipDesign.Controls.Add(txtCompanyHeader);
@@ -95,6 +160,8 @@ namespace SlipManagement2
             tabSlipDesign.Controls.Add(chkListSlipFields);
             tabSlipDesign.Controls.Add(lblRequired);
             tabSlipDesign.Controls.Add(chkListRequiredFields);
+            tabSlipDesign.Controls.Add(lblSlipNote);
+            tabSlipDesign.Controls.Add(lblReqNote);
         }
 
         private void LoadSlipDesignSettings()
@@ -150,16 +217,27 @@ namespace SlipManagement2
             if (dt == null) return;
 
             dgvFieldSetup.EndEdit(); // commit any in-progress cell edit before reading
-            chkListSlipFields.Items.Clear();
-            chkListRequiredFields.Items.Clear();
-            foreach (DataRow row in dt.Rows)
+
+            // Suppress ItemCheck handlers during programmatic loading — WinForms fires ItemCheck
+            // when Items.Add() is called with a pre-checked state, which would trigger spurious popups.
+            _loadingChecklists = true;
+            try
             {
-                string slot     = row["Database Slot"].ToString();
-                string label    = row["Label Name"].ToString();
-                bool   visible  = Convert.ToInt32(row["Hidden (1=Yes)"])   == 0;
-                bool   required = Convert.ToInt32(row["Required (1=Yes)"]) == 1;
-                chkListSlipFields.Items.Add($"{slot} : {label}", visible);
-                chkListRequiredFields.Items.Add($"{slot} : {label}", required);
+                chkListSlipFields.Items.Clear();
+                chkListRequiredFields.Items.Clear();
+                foreach (DataRow row in dt.Rows)
+                {
+                    string slot     = row["Database Slot"].ToString();
+                    string label    = row["Label Name"].ToString();
+                    bool   visible  = Convert.ToInt32(row["Hidden (1=Yes)"])   == 0;
+                    bool   required = Convert.ToInt32(row["Required (1=Yes)"]) == 1;
+                    chkListSlipFields.Items.Add($"{slot} : {label}", visible);
+                    chkListRequiredFields.Items.Add($"{slot} : {label}", required);
+                }
+            }
+            finally
+            {
+                _loadingChecklists = false;
             }
         }
 
@@ -173,12 +251,19 @@ namespace SlipManagement2
         // Checkbox change → update DataTable so Tab 1 and the save path see it
         private void ChkListSlipFields_ItemCheck(object sender, ItemCheckEventArgs args)
         {
+            if (_loadingChecklists) return;
+
             string item = chkListSlipFields.Items[args.Index].ToString();
 
-            // Field1 and Field7 are mandatory — reject any change
+            // Field1 and Field7 are mandatory — reject any change and explain why
             if (item.StartsWith("Field1 :") || item.StartsWith("Field7 :"))
             {
                 args.NewValue = args.CurrentValue;
+                this.BeginInvoke(new Action(() =>
+                    MessageBox.Show(
+                        "Field1 (Truck Reg) and Field7 (Tons/Weight) are required system fields.\r\n" +
+                        "They are always printed on slips and cannot be hidden.",
+                        "Field Locked", MessageBoxButtons.OK, MessageBoxIcon.Information)));
                 return;
             }
 
@@ -199,12 +284,19 @@ namespace SlipManagement2
 
         private void ChkListRequiredFields_ItemCheck(object sender, ItemCheckEventArgs args)
         {
+            if (_loadingChecklists) return;
+
             string item = chkListRequiredFields.Items[args.Index].ToString();
 
             // Field1 (Truck Reg) and Field7 (Tons) are always required — spec §4.2/4.4
             if (item.StartsWith("Field1 :") || item.StartsWith("Field7 :"))
             {
                 args.NewValue = args.CurrentValue;
+                this.BeginInvoke(new Action(() =>
+                    MessageBox.Show(
+                        "Field1 (Truck Reg) and Field7 (Tons/Weight) are required system fields.\r\n" +
+                        "They must always be filled in before printing and cannot be made optional.",
+                        "Field Locked", MessageBoxButtons.OK, MessageBoxIcon.Information)));
                 return;
             }
 
