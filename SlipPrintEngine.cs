@@ -13,15 +13,12 @@ namespace SlipManagement2
         // DOCUMENT BUILDERS
         // ===================================================================
 
-        // Builds a slip PrintDocument using all calibration settings from the DB.
+        // Builds a slip PrintDocument using all calibration settings from the active profile.
         public static PrintDocument BuildPrintDocument(Dictionary<string, string> slipData)
         {
-            // Read all calibration values once outside the PrintPage event
-            float fontScale = GetFontScale();
-            float offXMm    = GetOffsetX();
-            float offYMm    = GetOffsetY();
+            // Read everything from the active profile once, outside the PrintPage event.
+            var profile            = DatabaseManager.GetActiveProfile();
             var (pageWMm, pageHMm) = GetPageDimensionsMm();
-            var profile = DatabaseManager.GetActiveProfile();
 
             var pd = BuildBaseDocument();
             pd.PrintPage += (s, ev) =>
@@ -29,7 +26,7 @@ namespace SlipManagement2
                     pageWMm, pageHMm,
                     profile.MarginLeftMM, profile.MarginTopMM,
                     profile.MarginRightMM, profile.MarginBottomMM,
-                    fontScale, offXMm, offYMm);
+                    profile.SlipFontScale, profile.SlipOffsetXMm, profile.SlipOffsetYMm);
             return pd;
         }
 
@@ -418,21 +415,21 @@ namespace SlipManagement2
 
         // Renders the slip content into slipAreaUnits using the copies-per-page grid layout:
         //   1 copy  → full area
-        //   2 copies → split on X axis (left | right), full height each
-        //   3 copies → 2×2 grid, top-left / top-right / bottom-left filled
+        //   2 copies → split on X axis (left | right column), full height each
         //   4 copies → 2×2 grid, all four cells filled
-        // copiesPerPage = 0 means read from GlobalSettings; 1–4 uses the value directly.
+        // 3-copies is not supported (asymmetric layout removed); any caller passing 3
+        // is treated as 2. copiesPerPage = 0 reads from the active profile.
         internal static void RenderSlipForPreview(
             Graphics g, RectangleF slipAreaUnits,
             Dictionary<string, string> slipData, float fontScale = 1.0f,
             int copiesPerPage = 0)
         {
             if (copiesPerPage <= 0)
-            {
-                string s = DatabaseManager.GetGlobalSetting("CopiesPerPage", "1");
-                copiesPerPage = int.TryParse(s, out int cp) ? cp : 1;
-            }
-            copiesPerPage = Math.Max(1, Math.Min(4, copiesPerPage));
+                copiesPerPage = DatabaseManager.GetActiveProfile().CopiesPerPage;
+
+            // Normalise: only 1, 2, 4 are valid; treat 3 as 2, clamp anything else.
+            if (copiesPerPage == 3) copiesPerPage = 2;
+            copiesPerPage = copiesPerPage < 1 ? 1 : copiesPerPage > 4 ? 4 : copiesPerPage;
 
             if (copiesPerPage == 1)
             {
@@ -451,59 +448,33 @@ namespace SlipManagement2
             if (copiesPerPage == 2)
             {
                 // Two columns, full height
-                RenderSlipContent(g, new RectangleF(ax,          ay, hw - gU, ah), slipData, fontScale);
+                RenderSlipContent(g, new RectangleF(ax,           ay, hw - gU, ah), slipData, fontScale);
                 RenderSlipContent(g, new RectangleF(ax + hw + gU, ay, hw - gU, ah), slipData, fontScale);
 
                 float midX = ax + hw;
                 using (var p = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
                     g.DrawLine(p, midX, ay, midX, ay + ah);
             }
-            else
+            else   // 4 copies — full 2×2 grid
             {
-                // 2×2 grid — positions: [col, row]
                 RectangleF Cell(int col, int row)
                     => new RectangleF(ax + col * hw + (col == 0 ? 0 : gU),
                                       ay + row * hh + (row == 0 ? 0 : gU),
                                       hw - gU, hh - gU);
 
-                int count = copiesPerPage;   // 3 or 4
-                if (count >= 1) RenderSlipContent(g, Cell(0, 0), slipData, fontScale);
-                if (count >= 2) RenderSlipContent(g, Cell(1, 0), slipData, fontScale);
-                if (count >= 3) RenderSlipContent(g, Cell(0, 1), slipData, fontScale);
-                if (count >= 4) RenderSlipContent(g, Cell(1, 1), slipData, fontScale);
+                RenderSlipContent(g, Cell(0, 0), slipData, fontScale);
+                RenderSlipContent(g, Cell(1, 0), slipData, fontScale);
+                RenderSlipContent(g, Cell(0, 1), slipData, fontScale);
+                RenderSlipContent(g, Cell(1, 1), slipData, fontScale);
 
                 float midX = ax + hw;
                 float midY = ay + hh;
                 using (var p = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
                 {
-                    g.DrawLine(p, midX, ay, midX, ay + ah);
+                    g.DrawLine(p, midX, ay,  midX, ay + ah);
                     g.DrawLine(p, ax,   midY, ax + aw, midY);
                 }
             }
-        }
-
-        // ===================================================================
-        // CALIBRATION SETTINGS HELPERS
-        // ===================================================================
-        private static float GetFontScale()
-        {
-            string s = DatabaseManager.GetGlobalSetting("SlipFontScale", "1.0");
-            return float.TryParse(s, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out float f) ? f : 1.0f;
-        }
-
-        private static float GetOffsetX()
-        {
-            string s = DatabaseManager.GetGlobalSetting("SlipOffsetXMm", "0");
-            return float.TryParse(s, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out float f) ? f : 0f;
-        }
-
-        private static float GetOffsetY()
-        {
-            string s = DatabaseManager.GetGlobalSetting("SlipOffsetYMm", "0");
-            return float.TryParse(s, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out float f) ? f : 0f;
         }
 
         private static string V(Dictionary<string, string> d, string key)

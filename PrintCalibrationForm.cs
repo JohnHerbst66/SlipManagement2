@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
-using System.Globalization;
 using System.Windows.Forms;
 
 namespace SlipManagement2
@@ -18,7 +17,7 @@ namespace SlipManagement2
         private NumericUpDown _numTop, _numLeft, _numRight, _numBottom;
         private NumericUpDown _numFontScale;
         private NumericUpDown _numOffsetX, _numOffsetY;
-        private NumericUpDown _numCopiesPerPage;
+        private ComboBox      _cmbCopiesPerPage;
         private Label         _lblCopiesHint;
 
         // preview
@@ -101,7 +100,25 @@ namespace SlipManagement2
             y += 6;
 
             Section(left, "Copies Per Page (A4 or larger)", ref y);
-            _numCopiesPerPage = Row(left, "Copies:", ref y, 1, 4, 1, 1m, 0);
+            left.Controls.Add(new Label
+            {
+                Text     = "Copies:",
+                Location = new Point(14, y + 3),
+                AutoSize = true,
+                Font     = new Font("Arial", 9),
+            });
+            _cmbCopiesPerPage = new ComboBox
+            {
+                Location      = new Point(150, y),
+                Size          = new Size(88, 22),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font          = new Font("Arial", 9),
+            };
+            _cmbCopiesPerPage.Items.AddRange(new object[] { 1, 2, 4 });
+            _cmbCopiesPerPage.SelectedIndex = 0;
+            _cmbCopiesPerPage.SelectedIndexChanged += (s, e) => { if (!_suppressRebuild) RebuildBitmap(); };
+            left.Controls.Add(_cmbCopiesPerPage);
+            y += 28;
             _lblCopiesHint = new Label
             {
                 Text      = "Only available for A4 / Letter or larger paper.",
@@ -213,39 +230,33 @@ namespace SlipManagement2
 
                 if (target != null)
                 {
-                    Set(_numPaperW,  (decimal)target.WidthMM);
-                    Set(_numPaperH,  (decimal)target.HeightMM);
-                    Set(_numTop,     (decimal)target.MarginTopMM);
-                    Set(_numLeft,    (decimal)target.MarginLeftMM);
-                    Set(_numRight,   (decimal)target.MarginRightMM);
-                    Set(_numBottom,  (decimal)target.MarginBottomMM);
+                    Set(_numPaperW,    (decimal)target.WidthMM);
+                    Set(_numPaperH,    (decimal)target.HeightMM);
+                    Set(_numTop,       (decimal)target.MarginTopMM);
+                    Set(_numLeft,      (decimal)target.MarginLeftMM);
+                    Set(_numRight,     (decimal)target.MarginRightMM);
+                    Set(_numBottom,    (decimal)target.MarginBottomMM);
+                    Set(_numFontScale, (decimal)target.SlipFontScale);
+                    Set(_numOffsetX,   (decimal)target.SlipOffsetXMm);
+                    Set(_numOffsetY,   (decimal)target.SlipOffsetYMm);
+                    SetCopies(target.CopiesPerPage);
                 }
-
-                if (decimal.TryParse(
-                        DatabaseManager.GetGlobalSetting("SlipFontScale", "1.0"),
-                        NumberStyles.Any, CultureInfo.InvariantCulture, out decimal fs))
-                    Set(_numFontScale, fs);
-
-                if (decimal.TryParse(
-                        DatabaseManager.GetGlobalSetting("SlipOffsetXMm", "0"),
-                        NumberStyles.Any, CultureInfo.InvariantCulture, out decimal ox))
-                    Set(_numOffsetX, ox);
-
-                if (decimal.TryParse(
-                        DatabaseManager.GetGlobalSetting("SlipOffsetYMm", "0"),
-                        NumberStyles.Any, CultureInfo.InvariantCulture, out decimal oy))
-                    Set(_numOffsetY, oy);
-
-                if (int.TryParse(
-                        DatabaseManager.GetGlobalSetting("CopiesPerPage", "1"),
-                        out int copies))
-                    Set(_numCopiesPerPage, copies);
             }
-            finally { _suppressRebuild = true; }   // caller resets to false
+            finally { /* _suppressRebuild is reset to false by the constructor */ }
         }
 
         private void Set(NumericUpDown n, decimal val)
             => n.Value = Math.Max(n.Minimum, Math.Min(n.Maximum, val));
+
+        // Sets the ComboBox to 1, 2, or 4.  Treats 3 as 2 (layout removed).
+        private void SetCopies(int value)
+        {
+            if (value == 3) value = 2;
+            int idx = _cmbCopiesPerPage.Items.IndexOf(value);
+            _cmbCopiesPerPage.SelectedIndex = idx >= 0 ? idx : 0;
+        }
+
+        private int GetCopies() => _cmbCopiesPerPage.SelectedItem is int v ? v : 1;
 
         // ===================================================================
         // COPIES ENABLED STATE
@@ -256,12 +267,12 @@ namespace SlipManagement2
         private void UpdateCopiesEnabled()
         {
             bool canMulti = IsLargeEnoughForMultipleCopies();
-            _numCopiesPerPage.Enabled = canMulti;
+            _cmbCopiesPerPage.Enabled = canMulti;
             _lblCopiesHint.Visible    = !canMulti;
-            if (!canMulti && _numCopiesPerPage.Value > 1)
+            if (!canMulti && GetCopies() > 1)
             {
                 _suppressRebuild = true;
-                _numCopiesPerPage.Value = 1;
+                SetCopies(1);
                 _suppressRebuild = false;
             }
         }
@@ -321,7 +332,7 @@ namespace SlipManagement2
             // LAYER 3 — slip bitmap in grid layout matching RenderSlipForPreview
             if (_slipBitmap != null && mW > 0 && mH > 0)
             {
-                int   copies = Math.Max(1, (int)_numCopiesPerPage.Value);
+                int copies = GetCopies();
                 float offX   = (float)_numOffsetX.Value * fitScale;
                 float offY   = (float)_numOffsetY.Value * fitScale;
                 float hw     = mW / 2f;
@@ -341,17 +352,15 @@ namespace SlipManagement2
                     using (var sep = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
                         g.DrawLine(sep, mX + hw, mY, mX + hw, mY + mH);
                 }
-                else
+                else   // 4 copies — full 2×2 grid
                 {
-                    // 2×2 grid — positions [col, row]
                     float[] xs = { mX + offX, mX + offX + hw };
                     float[] ys = { mY + offY, mY + offY + hh };
-                    int[][] cells = copies == 3
-                        ? new[] { new[]{0,0}, new[]{1,0}, new[]{0,1} }
-                        : new[] { new[]{0,0}, new[]{1,0}, new[]{0,1}, new[]{1,1} };
 
-                    foreach (var c in cells)
-                        g.DrawImage(_slipBitmap, new RectangleF(xs[c[0]], ys[c[1]], hw, hh));
+                    g.DrawImage(_slipBitmap, new RectangleF(xs[0], ys[0], hw, hh));
+                    g.DrawImage(_slipBitmap, new RectangleF(xs[1], ys[0], hw, hh));
+                    g.DrawImage(_slipBitmap, new RectangleF(xs[0], ys[1], hw, hh));
+                    g.DrawImage(_slipBitmap, new RectangleF(xs[1], ys[1], hw, hh));
 
                     using (var sep = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
                     {
@@ -369,11 +378,11 @@ namespace SlipManagement2
         // ===================================================================
         private void RebuildBitmap()
         {
-            if (_numPaperW == null || _numCopiesPerPage == null) return;
+            if (_numPaperW == null || _cmbCopiesPerPage == null) return;
 
             UpdateCopiesEnabled();
 
-            int    copies     = Math.Max(1, (int)_numCopiesPerPage.Value);
+            int    copies     = GetCopies();
             double printableW = (double)(_numPaperW.Value - _numLeft.Value - _numRight.Value);
             double printableH = (double)(_numPaperH.Value - _numTop.Value  - _numBottom.Value);
             float  fontScale  = (float)_numFontScale.Value;
@@ -381,9 +390,9 @@ namespace SlipManagement2
             // Cell size follows the same grid logic as RenderSlipForPreview:
             //   1 copy  → full printable area
             //   2 copies → half width, full height
-            //   3 or 4  → half width, half height
+            //   4 copies → half width, half height
             double cellW = copies == 1 ? printableW : printableW / 2.0;
-            double cellH = copies <= 2 ? printableH : printableH / 2.0;
+            double cellH = copies == 4 ? printableH / 2.0 : printableH;
 
             _slipBitmap?.Dispose();
             _slipBitmap = null;
@@ -429,7 +438,7 @@ namespace SlipManagement2
                     (float)_numFontScale.Value,
                     (float)_numOffsetX.Value,
                     (float)_numOffsetY.Value,
-                    (int)_numCopiesPerPage.Value);
+                    GetCopies());
 
                 pd.Print();
             }
@@ -447,15 +456,6 @@ namespace SlipManagement2
         {
             try
             {
-                DatabaseManager.SaveGlobalSetting("SlipFontScale",
-                    ((double)_numFontScale.Value).ToString("G", CultureInfo.InvariantCulture));
-                DatabaseManager.SaveGlobalSetting("SlipOffsetXMm",
-                    ((double)_numOffsetX.Value).ToString("G", CultureInfo.InvariantCulture));
-                DatabaseManager.SaveGlobalSetting("SlipOffsetYMm",
-                    ((double)_numOffsetY.Value).ToString("G", CultureInfo.InvariantCulture));
-                DatabaseManager.SaveGlobalSetting("CopiesPerPage",
-                    ((int)_numCopiesPerPage.Value).ToString());
-
                 DatabaseManager.PrinterProfileData target = null;
                 foreach (var p in DatabaseManager.GetAllPrinterProfiles())
                 {
@@ -468,12 +468,21 @@ namespace SlipManagement2
 
                 if (target != null)
                 {
+                    // Paper/margin save (upsert; preserves calibration columns on conflict)
                     DatabaseManager.SaveOrUpdatePrinterProfile(
                         target.ProfileName, target.PrinterName, target.PaperSizeProfile,
                         (double)_numPaperW.Value, (double)_numPaperH.Value,
                         (double)_numTop.Value,    (double)_numLeft.Value,
                         (double)_numRight.Value,  (double)_numBottom.Value,
                         target.NumCopies, target.Orientation, target.SlipLengthIn);
+
+                    // Calibration save — targeted UPDATE of the four per-preset columns
+                    DatabaseManager.SaveCalibrationToProfile(
+                        target.ProfileName,
+                        (float)_numFontScale.Value,
+                        (float)_numOffsetX.Value,
+                        (float)_numOffsetY.Value,
+                        GetCopies());
                 }
 
                 string savedTo = target?.ProfileName ?? "(no active profile)";

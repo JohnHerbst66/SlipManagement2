@@ -175,18 +175,26 @@ namespace SlipManagement2
             // so existing databases are corrected regardless of when they were created.
             ExecNQ(conn, "UPDATE FieldConfig SET IsRequired=1 WHERE FieldSlot='Field1' OR FieldSlot='Field7';");
 
-            // PrinterProfiles migrations — add ProfileName, Orientation, SlipLengthIn columns
-            bool hasProfileName  = false;
-            bool hasOrientation  = false;
-            bool hasSlipLengthIn = false;
+            // PrinterProfiles migrations — add ProfileName, Orientation, SlipLengthIn, and calibration columns
+            bool hasProfileName   = false;
+            bool hasOrientation   = false;
+            bool hasSlipLengthIn  = false;
+            bool hasSlipFontScale = false;
+            bool hasSlipOffsetXMm = false;
+            bool hasSlipOffsetYMm = false;
+            bool hasCopiesPerPage = false;
             using (var cmd = new SQLiteCommand("PRAGMA table_info(PrinterProfiles);", conn))
             using (var r = cmd.ExecuteReader())
                 while (r.Read())
                 {
                     string col = r["name"].ToString();
-                    if (col.Equals("ProfileName",  StringComparison.OrdinalIgnoreCase)) hasProfileName  = true;
-                    if (col.Equals("Orientation",  StringComparison.OrdinalIgnoreCase)) hasOrientation  = true;
-                    if (col.Equals("SlipLengthIn", StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn = true;
+                    if (col.Equals("ProfileName",   StringComparison.OrdinalIgnoreCase)) hasProfileName   = true;
+                    if (col.Equals("Orientation",   StringComparison.OrdinalIgnoreCase)) hasOrientation   = true;
+                    if (col.Equals("SlipLengthIn",  StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn  = true;
+                    if (col.Equals("SlipFontScale", StringComparison.OrdinalIgnoreCase)) hasSlipFontScale = true;
+                    if (col.Equals("SlipOffsetXMm", StringComparison.OrdinalIgnoreCase)) hasSlipOffsetXMm = true;
+                    if (col.Equals("SlipOffsetYMm", StringComparison.OrdinalIgnoreCase)) hasSlipOffsetYMm = true;
+                    if (col.Equals("CopiesPerPage", StringComparison.OrdinalIgnoreCase)) hasCopiesPerPage = true;
                 }
 
             if (!hasProfileName)
@@ -211,6 +219,19 @@ namespace SlipManagement2
                 // Backfill from stored HeightMM for custom-length profiles
                 ExecNQ(conn, "UPDATE PrinterProfiles SET SlipLengthIn = ROUND(HeightMM / 25.4, 2) WHERE Mode = 'Small240x102' AND HeightMM > 0;");
             }
+
+            // Per-preset calibration columns (previously stored as shared GlobalSettings)
+            if (!hasSlipFontScale)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipFontScale REAL NOT NULL DEFAULT 1.0;");
+            if (!hasSlipOffsetXMm)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipOffsetXMm REAL NOT NULL DEFAULT 0.0;");
+            if (!hasSlipOffsetYMm)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipOffsetYMm REAL NOT NULL DEFAULT 0.0;");
+            if (!hasCopiesPerPage)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN CopiesPerPage INTEGER NOT NULL DEFAULT 1;");
+
+            // 3-copies layout has been removed (asymmetric 2×2 with blank cell). Migrate to 2.
+            ExecNQ(conn, "UPDATE PrinterProfiles SET CopiesPerPage = 2 WHERE CopiesPerPage = 3;");
         }
 
         private static void SeedFieldConfigIfEmpty(SQLiteConnection conn)
@@ -291,9 +312,11 @@ namespace SlipManagement2
                 INSERT INTO PrinterProfiles
                     (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
                      MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
-                     NumCopies, Orientation, SlipLengthIn, IsActive)
+                     NumCopies, Orientation, SlipLengthIn, IsActive,
+                     SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage)
                 VALUES ('Default', 'EPSON LX-350', 'Small240x102', 240, 139.7,
-                        10, 10, 10, 10, 1, 'Portrait', 5.5, 1);");
+                        10, 10, 10, 10, 1, 'Portrait', 5.5, 1,
+                        1.0, 0.0, 0.0, 1);");
         }
 
         // ===================================================================
@@ -636,6 +659,10 @@ namespace SlipManagement2
             public double MarginRightMM  { get; set; } = 10;
             public double MarginBottomMM { get; set; } = 10;
             public int    NumCopies      { get; set; } = 1;
+            public float  SlipFontScale  { get; set; } = 1.0f;
+            public float  SlipOffsetXMm  { get; set; } = 0f;
+            public float  SlipOffsetYMm  { get; set; } = 0f;
+            public int    CopiesPerPage  { get; set; } = 1;
         }
 
         // Returns the active PrinterProfile row, or sensible defaults if none exists yet.
@@ -646,7 +673,9 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    const string sql = "SELECT MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM, NumCopies FROM PrinterProfiles WHERE IsActive=1 LIMIT 1;";
+                    const string sql = @"SELECT MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
+                                                NumCopies, SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage
+                                         FROM PrinterProfiles WHERE IsActive=1 LIMIT 1;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                     {
@@ -659,6 +688,10 @@ namespace SlipManagement2
                                 MarginRightMM  = Convert.ToDouble(r["MarginRightMM"]),
                                 MarginBottomMM = Convert.ToDouble(r["MarginBottomMM"]),
                                 NumCopies      = Convert.ToInt32(r["NumCopies"]),
+                                SlipFontScale  = Convert.ToSingle(r["SlipFontScale"]),
+                                SlipOffsetXMm  = Convert.ToSingle(r["SlipOffsetXMm"]),
+                                SlipOffsetYMm  = Convert.ToSingle(r["SlipOffsetYMm"]),
+                                CopiesPerPage  = Convert.ToInt32(r["CopiesPerPage"]),
                             };
                         }
                     }
@@ -685,6 +718,10 @@ namespace SlipManagement2
             public string Orientation      { get; set; }
             public double SlipLengthIn     { get; set; }
             public bool   IsActive         { get; set; }
+            public float  SlipFontScale    { get; set; } = 1.0f;
+            public float  SlipOffsetXMm    { get; set; } = 0f;
+            public float  SlipOffsetYMm    { get; set; } = 0f;
+            public int    CopiesPerPage    { get; set; } = 1;
         }
 
         private static PrinterProfileData ReadProfileRow(System.Data.SQLite.SQLiteDataReader r)
@@ -705,6 +742,10 @@ namespace SlipManagement2
                 Orientation      = r["Orientation"].ToString(),
                 SlipLengthIn     = Convert.ToDouble(r["SlipLengthIn"]),
                 IsActive         = Convert.ToInt32(r["IsActive"]) == 1,
+                SlipFontScale    = Convert.ToSingle(r["SlipFontScale"]),
+                SlipOffsetXMm    = Convert.ToSingle(r["SlipOffsetXMm"]),
+                SlipOffsetYMm    = Convert.ToSingle(r["SlipOffsetYMm"]),
+                CopiesPerPage    = Convert.ToInt32(r["CopiesPerPage"]),
             };
         }
 
@@ -746,7 +787,10 @@ namespace SlipManagement2
             return null;
         }
 
-        // Upserts a preset by name, marks it active, and syncs GlobalSettings so SlipPrintEngine stays consistent.
+        // Upserts a preset by name, marks it active, and syncs GlobalSettings so legacy code stays consistent.
+        // Calibration columns (SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage) are intentionally
+        // excluded from the ON CONFLICT UPDATE so they are preserved when editing an existing preset from
+        // PrinterSettingsForm.  Use SaveCalibrationToProfile to write calibration values.
         public static void SaveOrUpdatePrinterProfile(
             string profileName, string printerName, string paperSizeProfile,
             double widthMM, double heightMM,
@@ -760,11 +804,26 @@ namespace SlipManagement2
                     conn.Open();
                     ExecNQ(conn, "UPDATE PrinterProfiles SET IsActive=0;");
                     const string sql = @"
-                        INSERT OR REPLACE INTO PrinterProfiles
+                        INSERT INTO PrinterProfiles
                             (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
                              MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
-                             NumCopies, Orientation, SlipLengthIn, IsActive)
-                        VALUES (@PN, @P, @M, @W, @H, @T, @L, @R, @B, @C, @O, @SL, 1);";
+                             NumCopies, Orientation, SlipLengthIn, IsActive,
+                             SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage)
+                        VALUES (@PN, @P, @M, @W, @H, @T, @L, @R, @B, @C, @O, @SL, 1,
+                                1.0, 0.0, 0.0, 1)
+                        ON CONFLICT(ProfileName) DO UPDATE SET
+                            PrinterName    = excluded.PrinterName,
+                            Mode           = excluded.Mode,
+                            WidthMM        = excluded.WidthMM,
+                            HeightMM       = excluded.HeightMM,
+                            MarginTopMM    = excluded.MarginTopMM,
+                            MarginLeftMM   = excluded.MarginLeftMM,
+                            MarginRightMM  = excluded.MarginRightMM,
+                            MarginBottomMM = excluded.MarginBottomMM,
+                            NumCopies      = excluded.NumCopies,
+                            Orientation    = excluded.Orientation,
+                            SlipLengthIn   = excluded.SlipLengthIn,
+                            IsActive       = excluded.IsActive;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@PN", profileName);
@@ -785,6 +844,36 @@ namespace SlipManagement2
                 SyncGlobalSettingsFromProfile(printerName, paperSizeProfile, orientation, numCopies, slipLengthIn);
             }
             catch (Exception ex) { MessageBox.Show("Error saving printer profile: " + ex.Message); }
+        }
+
+        // Writes only the calibration columns for an existing profile row.
+        public static void SaveCalibrationToProfile(string profileName,
+            float slipFontScale, float slipOffsetXMm, float slipOffsetYMm, int copiesPerPage)
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    const string sql = @"
+                        UPDATE PrinterProfiles SET
+                            SlipFontScale = @FS,
+                            SlipOffsetXMm = @OX,
+                            SlipOffsetYMm = @OY,
+                            CopiesPerPage = @CP
+                        WHERE ProfileName = @PN;";
+                    using (var cmd = new SQLiteCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@PN", profileName);
+                        cmd.Parameters.AddWithValue("@FS", slipFontScale);
+                        cmd.Parameters.AddWithValue("@OX", slipOffsetXMm);
+                        cmd.Parameters.AddWithValue("@OY", slipOffsetYMm);
+                        cmd.Parameters.AddWithValue("@CP", copiesPerPage);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex) { MessageBox.Show("Error saving calibration: " + ex.Message); }
         }
 
         // Flips IsActive to the named preset and syncs GlobalSettings.
