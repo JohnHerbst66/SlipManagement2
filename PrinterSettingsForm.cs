@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Printing;
 using System.Globalization;
 using System.Windows.Forms;
@@ -37,6 +38,11 @@ namespace SlipManagement2
             BuildPresetRow();
             BuildRightColumn();
             LoadSettingsFromDb();
+
+            // Wire after load so preset restore doesn't interfere, then sync initial state
+            cmbPrinters.SelectedIndexChanged += (s, e) =>
+                btnCalibration.Enabled = cmbPrinters.SelectedItem != null;
+            btnCalibration.Enabled = cmbPrinters.SelectedItem != null;
         }
 
         // ===================================================================
@@ -359,5 +365,22 @@ namespace SlipManagement2
         }
 
         private void btnCancelSettings_Click(object sender, EventArgs e) => Close();
+
+        // ===================================================================
+        // CALIBRATION PAGE — opens PrintCalibrationForm for the selected preset
+        // ===================================================================
+        private void btnCalibration_Click(object sender, EventArgs e)
+        {
+            string selected = cmbPresets.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(selected) || selected == NewPresetSentinel)
+            {
+                MessageBox.Show("Please select a saved preset first, then calibrate.",
+                    "No Preset Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var cal = new PrintCalibrationForm(null, selected))
+                cal.ShowDialog(this);
+        }
     }
 }

@@ -109,6 +109,12 @@
     <Compile Include="PrinterSettingsForm.Designer.cs">
       <DependentUpon>PrinterSettingsForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="PrintCalibrationForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PrintCalibrationForm.Designer.cs">
+      <DependentUpon>PrintCalibrationForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="PrintSlipPreview.cs">
       <SubType>Form</SubType>
     </Compile>
