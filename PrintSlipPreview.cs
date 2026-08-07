@@ -130,8 +130,14 @@ namespace SlipManagement2
 
                 if (_slipBitmap != null)
                 {
+                    // Apply the profile's calibration offsets, exactly as the print job does
+                    // in RenderSlipFromDimensions — otherwise a calibrated slip previews
+                    // centred but prints shifted.
+                    float offX = profile.SlipOffsetXMm * fitScale;
+                    float offY = profile.SlipOffsetYMm * fitScale;
+
                     g.SetClip(pageRect);
-                    g.DrawImage(_slipBitmap, new RectangleF(mX, mY, mW, mH));
+                    g.DrawImage(_slipBitmap, new RectangleF(mX + offX, mY + offY, mW, mH));
                     g.ResetClip();
                 }
             }
@@ -159,10 +165,12 @@ namespace SlipManagement2
                 return;
             }
 
-            float fontScale = float.TryParse(
-                DatabaseManager.GetGlobalSetting("SlipFontScale", "1.0"),
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out float fs) ? fs : 1.0f;
+            // Font scale comes from the active profile — the same value BuildPrintDocument
+            // passes to the real print job. It used to be read from GlobalSettings["SlipFontScale"],
+            // which stopped being written when calibration moved into PrinterProfiles. Existing
+            // databases still hold that orphaned value, so the preview kept rendering at the old
+            // pre-refactor scale while the printer used the profile's — e.g. 2.75 vs 1.95.
+            float fontScale = profile.SlipFontScale;
 
             int wU = Math.Max(1, (int)(slipWMm / 25.4 * 100));
             int hU = Math.Max(1, (int)(slipHMm / 25.4 * 100));

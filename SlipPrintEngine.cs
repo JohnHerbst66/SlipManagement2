@@ -359,10 +359,17 @@ namespace SlipManagement2
             y += 5;
 
             // ---- TIMESTAMP ----
-            string createdAt = V(slipData, "CreatedAt");
-            if (createdAt == "----") createdAt = DateTime.Now.ToString("yyyy-MM-dd  HH:mm");
+            // Prefer the slip's recorded first-print date, so a reprint carries the same date as
+            // the original sheet and as the database row. Only a slip being printed for the very
+            // first time has no PrintedAt yet — for that one, "now" IS the first print date.
+            string printedAt = V(slipData, "PrintedAt");
+            if (string.IsNullOrWhiteSpace(printedAt) || printedAt == "----")
+                printedAt = DateTime.Now.ToString("yyyy-MM-dd  HH:mm");
+            else if (DateTime.TryParse(printedAt, out DateTime parsed))
+                printedAt = parsed.ToString("yyyy-MM-dd  HH:mm");
+
             using (var tsFont = new Font("Arial", 7 * fontScale, FontStyle.Italic))
-                g.DrawString($"Printed: {createdAt}", tsFont, Brushes.Black, x + 2, y);
+                g.DrawString($"Printed: {printedAt}", tsFont, Brushes.Black, x + 2, y);
 
             // ---- SIGNATURE LINE ----
             float sigLineY = area.Bottom - (float)(10 / 25.4 * 100);
@@ -393,24 +400,13 @@ namespace SlipManagement2
                     return (p.WidthMM, p.HeightMM);
 
             // Fallback
-            string paperProfile = DatabaseManager.GetGlobalSetting("PaperSizeProfile", "Small240x102");
-            double widthMm = 240, heightMm = 102;
-            switch (paperProfile)
-            {
-                case "A4":           widthMm = 210;   heightMm = 297;   break;
-                case "A5":           widthMm = 148;   heightMm = 210;   break;
-                case "A6":           widthMm = 105;   heightMm = 148;   break;
-                case "Letter":       widthMm = 215.9; heightMm = 279.4; break;
-                case "Small151x151": widthMm = 151;   heightMm = 151;   break;
-                case "Small240x102":
-                    widthMm = 240;
-                    string customLen = DatabaseManager.GetGlobalSetting("SlipCustomLength", "5.5");
-                    if (double.TryParse(customLen, System.Globalization.NumberStyles.Any,
-                            System.Globalization.CultureInfo.InvariantCulture, out double lenIn))
-                        heightMm = lenIn * 25.4;
-                    break;
-            }
-            return (widthMm, heightMm);
+            string paperProfile = DatabaseManager.GetGlobalSetting("PaperSizeProfile", PaperSizeHelper.DefaultProfile);
+            string customLen    = DatabaseManager.GetGlobalSetting("SlipCustomLength", "5.5");
+            if (!double.TryParse(customLen, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out double lenIn))
+                lenIn = 5.5;
+
+            return PaperSizeHelper.GetDimensionsMm(paperProfile, lenIn);
         }
 
         // Renders the slip content into slipAreaUnits using the copies-per-page grid layout:

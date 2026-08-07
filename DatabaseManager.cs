@@ -32,8 +32,9 @@ namespace SlipManagement2
                             Field1  TEXT, Field2  TEXT, Field3  TEXT, Field4  TEXT,  Field5  TEXT,
                             Field6  TEXT, Field7  TEXT, Field8  TEXT, Field9  TEXT,  Field10 TEXT,
                             VoidReason  TEXT,
-                            CreatedAt   TEXT    NOT NULL DEFAULT (datetime('now')),
-                            PrintedAt   TEXT
+                            CreatedAt   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                            PrintedAt   TEXT,
+                            VoidedAt    TEXT
                         );");
 
                     ExecNQ(conn, @"
@@ -132,6 +133,22 @@ namespace SlipManagement2
         // Adds columns introduced after the initial schema without wiping any data.
         private static void MigrateSchemaIfNeeded(SQLiteConnection conn)
         {
+            // Slips.VoidedAt — records when a slip was voided, so the Voided history view can be
+            // filtered by the date the void actually happened rather than by the creation date.
+            bool hasVoidedAt = false;
+            using (var cmd = new SQLiteCommand("PRAGMA table_info(Slips);", conn))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read())
+                    if (r["name"].ToString().Equals("VoidedAt", StringComparison.OrdinalIgnoreCase))
+                        hasVoidedAt = true;
+
+            if (!hasVoidedAt)
+                ExecNQ(conn, "ALTER TABLE Slips ADD COLUMN VoidedAt TEXT;");
+
+            // Slips voided before this column existed have no recorded void time. Fall back to
+            // CreatedAt so they still appear in a date-filtered Voided view rather than vanishing.
+            ExecNQ(conn, "UPDATE Slips SET VoidedAt = CreatedAt WHERE Status = 'Voided' AND VoidedAt IS NULL;");
+
             bool hasLookupTable = false;
             bool hasIsRequired  = false;
             using (var cmd = new SQLiteCommand("PRAGMA table_info(FieldConfig);", conn))
@@ -333,9 +350,15 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
+                    // CreatedAt is set explicitly rather than left to the column default. All
+                    // timestamps use the clock of whatever machine the app runs on — SQLite's
+                    // datetime('now') is UTC, which would disagree with BillNumber and with the
+                    // date printed on the slip, both of which come from C# DateTime.Now. Setting
+                    // it here also fixes databases whose table was created before this change,
+                    // without rebuilding the table.
                     const string sql = @"
-                        INSERT INTO Slips (BillNumber, Field1, Field2, Field3, Field4, Field5, Field6, Field7, Field8, Field9, Field10)
-                        VALUES (@BN, @F1, @F2, @F3, @F4, @F5, @F6, @F7, @F8, @F9, @F10);";
+                        INSERT INTO Slips (BillNumber, CreatedAt, Field1, Field2, Field3, Field4, Field5, Field6, Field7, Field8, Field9, Field10)
+                        VALUES (@BN, datetime('now','localtime'), @F1, @F2, @F3, @F4, @F5, @F6, @F7, @F8, @F9, @F10);";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@BN",  billNumber);
@@ -410,7 +433,13 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand("UPDATE Slips SET Status='Printed', PrintedAt=datetime('now') WHERE SlipID=@ID;", conn))
+                    // COALESCE, not a plain assignment: PrintedAt records the FIRST time this slip
+                    // was printed and must never move. A slip can be reprinted any number of times
+                    // (spec §5.2) without changing its place in the record. Reprints currently go
+                    // through PrintSlipPreview and never reach here, but the guard means no future
+                    // code path can overwrite the original print date either.
+                    using (var cmd = new SQLiteCommand(
+                        "UPDATE Slips SET Status='Printed', PrintedAt=COALESCE(PrintedAt, datetime('now','localtime')) WHERE SlipID=@ID;", conn))
                     {
                         cmd.Parameters.AddWithValue("@ID", slipId);
                         cmd.ExecuteNonQuery();
@@ -433,7 +462,7 @@ namespace SlipManagement2
                 {
                     conn.Open();
                     using (var cmd = new SQLiteCommand(
-                        "UPDATE Slips SET Status='Voided', VoidReason=@R WHERE SlipID=@ID AND Status='Printed';", conn))
+                        "UPDATE Slips SET Status='Voided', VoidReason=@R, VoidedAt=datetime('now','localtime') WHERE SlipID=@ID AND Status='Printed';", conn))
                     {
                         cmd.Parameters.AddWithValue("@ID", slipId);
                         cmd.Parameters.AddWithValue("@R",  reason);
@@ -457,7 +486,7 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand("UPDATE Slips SET Status='Voided', VoidReason=@R WHERE SlipID=@ID AND Status='Unprinted';", conn))
+                    using (var cmd = new SQLiteCommand("UPDATE Slips SET Status='Voided', VoidReason=@R, VoidedAt=datetime('now','localtime') WHERE SlipID=@ID AND Status='Unprinted';", conn))
                     {
                         cmd.Parameters.AddWithValue("@ID", slipId);
                         cmd.Parameters.AddWithValue("@R",  reason);
@@ -475,6 +504,22 @@ namespace SlipManagement2
         // SLIP QUERIES — used by SlipsHistoryForm
         // ===================================================================
 
+        // The date column a history search should filter on, chosen by status.
+        //
+        // A slip's dates diverge: one created on the 1st can be printed on the 2nd. Filtering
+        // everything by CreatedAt meant a "printed this week" search silently missed slips
+        // created earlier, so each status is filtered by the date its own event happened.
+        // COALESCE guards rows written before the relevant column existed.
+        private static string DateColumnFor(string status)
+        {
+            switch (status)
+            {
+                case "Printed": return "COALESCE(PrintedAt, CreatedAt)";
+                case "Voided":  return "COALESCE(VoidedAt,  CreatedAt)";
+                default:        return "CreatedAt";
+            }
+        }
+
         // Returns slips matching status + date range + optional per-field equality filters.
         // fieldFilters keys must be "Field1"–"Field10" (controlled by the caller, never user input).
         public static DataTable QuerySlips(string status, DateTime from, DateTime to,
@@ -485,8 +530,9 @@ namespace SlipManagement2
             {
                 string fromStr = from.ToString("yyyy-MM-dd") + " 00:00:00";
                 string toStr   = to.ToString("yyyy-MM-dd")   + " 23:59:59";
+                string dateCol = DateColumnFor(status);
 
-                string sql = "SELECT * FROM Slips WHERE Status=@Status AND CreatedAt BETWEEN @From AND @To";
+                string sql = $"SELECT * FROM Slips WHERE Status=@Status AND {dateCol} BETWEEN @From AND @To";
                 var paramList = new List<SQLiteParameter>
                 {
                     new SQLiteParameter("@Status", status),
@@ -501,7 +547,7 @@ namespace SlipManagement2
                         paramList.Add(new SQLiteParameter($"@{kv.Key}", "%" + kv.Value + "%"));
                     }
 
-                sql += " ORDER BY CreatedAt DESC;";
+                sql += $" ORDER BY {dateCol} DESC;";
 
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
@@ -527,8 +573,10 @@ namespace SlipManagement2
             {
                 string fromStr = from.ToString("yyyy-MM-dd") + " 00:00:00";
                 string toStr   = to.ToString("yyyy-MM-dd")   + " 23:59:59";
+                // Must use the same date column as QuerySlips, or the filter dropdowns would
+                // offer values belonging to rows the grid isn't showing.
                 string sql     = $"SELECT DISTINCT {fieldKey} FROM Slips WHERE Status=@Status " +
-                                 $"AND CreatedAt BETWEEN @From AND @To " +
+                                 $"AND {DateColumnFor(status)} BETWEEN @From AND @To " +
                                  $"AND {fieldKey} IS NOT NULL AND {fieldKey} != '' ORDER BY {fieldKey};";
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
@@ -1125,7 +1173,8 @@ namespace SlipManagement2
                                COALESCE(SUM(CAST(Field7 AS REAL)), 0) AS TotalTons
                         FROM Slips
                         WHERE Status = 'Printed'
-                          AND date(PrintedAt, 'localtime') = date('now', 'localtime');";
+                          AND date(PrintedAt) = date('now', 'localtime');";
+                    // PrintedAt is already machine-local, so it must NOT be converted again here.
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                         if (r.Read())
@@ -1153,7 +1202,7 @@ namespace SlipManagement2
                                COUNT(*) AS Loads
                         FROM Slips
                         WHERE Status = 'Printed'
-                          AND date(PrintedAt, 'localtime') = date('now', 'localtime')
+                          AND date(PrintedAt) = date('now', 'localtime')
                           AND {fieldSlot} IS NOT NULL AND {fieldSlot} != ''
                         GROUP BY {fieldSlot}
                         ORDER BY Tons DESC
@@ -1202,6 +1251,12 @@ namespace SlipManagement2
                 string stamp      = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 string backupFile = Path.Combine(backupDir, $"WeighbridgeData_{stamp}.db");
                 File.Copy(DbPath, backupFile, overwrite: true);
+
+                // File.Copy carries the SOURCE file's timestamp across, so a fresh backup of a
+                // database that hasn't been written to in a while arrives already "old". Stamp it
+                // with the real backup time, otherwise the purge below measures the age of the
+                // data instead of the age of the backup and can delete a copy made moments ago.
+                File.SetLastWriteTime(backupFile, DateTime.Now);
 
                 // Rolling 30-day purge
                 foreach (string f in Directory.GetFiles(backupDir, "WeighbridgeData_*.db"))

@@ -323,6 +323,18 @@ namespace SlipManagement2
                 return;
             }
 
+            // Re-check the format here, not just via the Print button's enabled state — spec §4.4
+            // requires that a slip can never be printed with an unparseable tonnage even if the
+            // UI state is stale. Typing is already filtered, but a pasted value bypasses KeyPress.
+            if (!double.TryParse(fields[6], NumberStyles.Any, CultureInfo.InvariantCulture, out _))
+            {
+                MessageBox.Show("Tons must be a valid number (for example 36,98).\n\n" +
+                                "Please correct it before printing.",
+                    "Invalid Tons", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtField7.Focus();
+                return;
+            }
+
             var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
             var missing = new System.Collections.Generic.List<string>();
             for (int i = 1; i <= 10; i++)
@@ -352,6 +364,18 @@ namespace SlipManagement2
 
                 if (ExistingSlipId <= 0) return;
                 txtSlipID.Text = ExistingSlipId.ToString();
+            }
+            else
+            {
+                // The draft already exists, but the operator may have edited it since the last
+                // Save. Without this the paper carries the new values while the database keeps
+                // the old ones — the printed record and the stored record must never disagree
+                // (spec §6.2, the same proof-of-record rule behind DEF-002).
+                if (!DatabaseManager.UpdateSlipFields(
+                    ExistingSlipId,
+                    fields[0], fields[1], fields[2], fields[3], fields[4],
+                    fields[5], fields[6], fields[7], fields[8], fields[9]))
+                    return;
             }
 
             var printPackage = new Dictionary<string, string>

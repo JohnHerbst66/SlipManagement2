@@ -108,9 +108,9 @@ namespace SlipManagement2
                 Size          = new Size(220, 22),
                 DropDownStyle = ComboBoxStyle.DropDownList,
             };
-            foreach (var s in new[] { "A4", "A5", "A6", "Letter", "Small151x151", "Small240x102" })
+            foreach (var s in PaperSizeHelper.ProfileNames)
                 cmbPaperSize.Items.Add(s);
-            cmbPaperSize.SelectedItem = "Small240x102";
+            cmbPaperSize.SelectedItem = PaperSizeHelper.DefaultProfile;
             cmbPaperSize.SelectedIndexChanged += (s, ev) => UpdateSlipLengthVisibility();
             Controls.Add(cmbPaperSize);
 
@@ -187,7 +187,7 @@ namespace SlipManagement2
 
         private void UpdateSlipLengthVisibility()
         {
-            bool isCustom = cmbPaperSize.SelectedItem?.ToString() == "Small240x102";
+            bool isCustom = PaperSizeHelper.UsesCustomLength(cmbPaperSize.SelectedItem?.ToString());
             lblSlipLength.Visible = isCustom;
             txtSlipLength.Visible = isCustom;
         }
@@ -241,40 +241,35 @@ namespace SlipManagement2
             DatabaseManager.SaveGlobalSetting("LogoPath",    txtLogoPath.Text.Trim());
 
             string printer   = cmbPrinter.SelectedItem?.ToString();
-            string paperSize = cmbPaperSize.SelectedItem?.ToString() ?? "Small240x102";
+            string paperSize = cmbPaperSize.SelectedItem?.ToString() ?? PaperSizeHelper.DefaultProfile;
             if (!string.IsNullOrEmpty(printer))
                 DatabaseManager.SaveGlobalSetting("SelectedPrinter", printer);
             DatabaseManager.SaveGlobalSetting("PaperSizeProfile", paperSize);
             DatabaseManager.SaveGlobalSetting("SlipCustomLength",
                 slipLenIn.ToString("G", CultureInfo.InvariantCulture));
 
-            // 4. Save printer preset if the checkbox is ticked
-            if (chkSavePreset.Checked)
-            {
-                string presetName = txtPresetName.Text.Trim();
-                if (string.IsNullOrEmpty(presetName)) presetName = "Default";
+            // 4. Write the chosen printer/paper values to a profile.
+            //
+            // This happens whether or not "save as preset" is ticked. The checkbox only decides
+            // WHICH profile gets the values — a named one, or the "Default" that InitializeDatabase
+            // just seeded. It must never mean "discard them": the seeded Default is hardcoded to
+            // Small240x102 and is the active profile, and SlipPrintEngine.GetPageDimensionsMm reads
+            // the active profile ahead of GlobalSettings. Leaving it untouched meant an operator who
+            // selected A4 and unticked the box silently got a 240 x 139.7 mm page.
+            string presetName = chkSavePreset.Checked ? txtPresetName.Text.Trim() : "Default";
+            if (string.IsNullOrEmpty(presetName)) presetName = "Default";
 
-                double wMM = 240, hMM = slipLenIn * 25.4;
-                switch (paperSize)
-                {
-                    case "A4":           wMM = 210;   hMM = 297;          break;
-                    case "A5":           wMM = 148;   hMM = 210;          break;
-                    case "A6":           wMM = 105;   hMM = 148;          break;
-                    case "Letter":       wMM = 215.9; hMM = 279.4;        break;
-                    case "Small151x151": wMM = 151;   hMM = 151;          break;
-                    case "Small240x102": wMM = 240;   hMM = slipLenIn * 25.4; break;
-                }
+            var (wMM, hMM) = PaperSizeHelper.GetDimensionsMm(paperSize, slipLenIn);
 
-                DatabaseManager.SaveOrUpdatePrinterProfile(
-                    presetName,
-                    printer ?? "EPSON LX-350",
-                    paperSize,
-                    wMM, hMM,
-                    10, 10, 10, 10,
-                    1,
-                    "Portrait",
-                    slipLenIn);
-            }
+            DatabaseManager.SaveOrUpdatePrinterProfile(
+                presetName,
+                printer ?? "EPSON LX-350",
+                paperSize,
+                wMM, hMM,
+                10, 10, 10, 10,
+                1,
+                "Portrait",
+                slipLenIn);
 
             DialogResult = DialogResult.OK;
             Close();

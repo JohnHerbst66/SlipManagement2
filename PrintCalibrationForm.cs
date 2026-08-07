@@ -516,7 +516,7 @@ namespace SlipManagement2
                 ["Field8"]     = "ORD-0042",
                 ["Field9"]     = "Slot 3",
                 ["Field10"]    = "Client ABC",
-                ["CreatedAt"]  = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
+                ["PrintedAt"]  = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
             };
         }
     }

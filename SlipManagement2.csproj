@@ -95,14 +95,19 @@
       <DependentUpon>CreateSlip.cs</DependentUpon>
     </Compile>
     <Compile Include="DatabaseManager.cs" />
-    <Compile Include="FirstTimeSetupForm.cs" />
+    <Compile Include="FirstTimeSetupForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Form1.Designer.cs">
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
-    <Compile Include="LookupManagerForm.cs" />
+    <Compile Include="LookupManagerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PaperSizeHelper.cs" />
     <Compile Include="PrinterSettingsForm.cs">
       <SubType>Form</SubType>
     </Compile>
