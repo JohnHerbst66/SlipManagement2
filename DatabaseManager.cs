@@ -1223,6 +1223,27 @@ namespace SlipManagement2
         // BACKUP
         // ===================================================================
 
+        // Removes the database file.
+        //
+        // Intended for one situation only: abandoning First-Time Setup after something created
+        // the database early. At that point the file can only hold seeded defaults, never
+        // operator data, because Program.cs shows setup only when no database exists. Do NOT
+        // call this from anywhere a real record could be lost.
+        public static bool DeleteDatabaseFile()
+        {
+            try
+            {
+                // Release pooled handles, or the file stays locked and the delete silently fails
+                SQLiteConnection.ClearAllPools();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                if (File.Exists(DbPath)) File.Delete(DbPath);
+                return !File.Exists(DbPath);
+            }
+            catch { return false; }
+        }
+
         // Copies the DB to a user-chosen path. Returns true on success.
         public static bool PerformManualBackup(string destinationPath)
         {

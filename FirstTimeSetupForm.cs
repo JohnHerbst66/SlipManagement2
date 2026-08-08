@@ -17,6 +17,10 @@ namespace SlipManagement2
         private CheckBox chkSavePreset;
         private TextBox  txtPresetName;
 
+        // "Customize Fields..." has to create the database so CustomizeSlipsForm can load the
+        // field list. That must not count as completing setup — see OnFormClosing.
+        private bool _dbCreatedDuringSetup;
+
         public FirstTimeSetupForm()
         {
             Text            = "Welcome — First Time Setup";
@@ -118,10 +122,14 @@ namespace SlipManagement2
             Controls.Add(lblSlipLength);
             txtSlipLength = new TextBox
             {
-                Location = new Point(256, 270),
-                Size     = new Size(100, 22),
-                Text     = "5.5",
+                Location  = new Point(256, 270),
+                Size      = new Size(100, 22),
+                Text      = "5.5",
+                MaxLength = 6,
             };
+            // Reject letters as they are typed rather than only complaining on Get Started.
+            // A rejected keystroke is unmistakable; a message box after the fact is easy to miss.
+            txtSlipLength.KeyPress += TxtSlipLength_KeyPress;
             Controls.Add(txtSlipLength);
 
             // Preset save option
@@ -185,6 +193,30 @@ namespace SlipManagement2
             UpdateSlipLengthVisibility();
         }
 
+        // Slip length is a measurement in inches: digits plus at most one decimal separator.
+        // Mirrors the filtering already applied to the Tons field on CreateSlip.
+        private void TxtSlipLength_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (char.IsControl(e.KeyChar)) return;
+
+            if (!char.IsDigit(e.KeyChar) && e.KeyChar != '.' && e.KeyChar != ',')
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (e.KeyChar == '.' || e.KeyChar == ',')
+            {
+                // Build what the text WOULD become, so replacing a selected separator still works
+                string simulated = txtSlipLength.Text
+                    .Remove(txtSlipLength.SelectionStart, txtSlipLength.SelectionLength)
+                    .Insert(txtSlipLength.SelectionStart, e.KeyChar.ToString());
+
+                if (simulated.Split('.', ',').Length - 1 > 1)
+                    e.Handled = true;
+            }
+        }
+
         private void UpdateSlipLengthVisibility()
         {
             bool isCustom = PaperSizeHelper.UsesCustomLength(cmbPaperSize.SelectedItem?.ToString());
@@ -205,8 +237,22 @@ namespace SlipManagement2
         {
             // Database must exist before CustomizeSlipsForm can load FieldConfig
             DatabaseManager.InitializeDatabase();
+            _dbCreatedDuringSetup = true;
             using (var customize = new CustomizeSlipsForm())
                 customize.ShowDialog(this);
+        }
+
+        // "Get Started" is the only action that commits a setup. If the operator abandons this
+        // screen after Customize Fields created the database, remove it again — otherwise the
+        // next launch sees a database, skips setup entirely, and lands on a half-configured
+        // system holding the seeded defaults instead of the operator's choices, with no way
+        // back to this screen short of deleting the file by hand.
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+
+            if (DialogResult != DialogResult.OK && _dbCreatedDuringSetup)
+                DatabaseManager.DeleteDatabaseFile();
         }
 
         private void BtnStart_Click(object sender, EventArgs e)
