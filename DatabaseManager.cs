@@ -51,7 +51,6 @@ namespace SlipManagement2
                             LabelName   TEXT    NOT NULL,
                             OrderLine   INTEGER NOT NULL,
                             Hidden      INTEGER NOT NULL DEFAULT 0,
-                            LookupTable TEXT    NOT NULL DEFAULT '',
                             IsRequired  INTEGER NOT NULL DEFAULT 0
                         );");
 
@@ -79,15 +78,26 @@ namespace SlipManagement2
                             IsActive       INTEGER NOT NULL DEFAULT 0
                         );");
 
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS TruckRegs     (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS StockpileRefs (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS ROMTypes      (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS BlockNrs      (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Sizes         (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Clients       (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Destinations  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS OrderNumbers  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Slots         (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
+                    // Dropdown suggestion lists (DEF-030). A list belongs to a field's LABEL,
+                    // not to its slot, so renaming a field moves it to a different list and
+                    // renaming it back returns the original one. Nothing is created here: a
+                    // fresh database has no lists at all until values are actually entered.
+                    ExecNQ(conn, @"
+                        CREATE TABLE IF NOT EXISTS LookupLists (
+                            ListID    INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ListName  TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+                            CreatedAt TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+                        );");
+
+                    // Kept separate from LookupLists so an emptied list still exists and stays
+                    // attached to its label — clearing a list and deleting it are different acts.
+                    ExecNQ(conn, @"
+                        CREATE TABLE IF NOT EXISTS LookupEntries (
+                            EntryID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ListID  INTEGER NOT NULL REFERENCES LookupLists(ListID),
+                            Value   TEXT    NOT NULL,
+                            UNIQUE (ListID, Value)
+                        );");
 
                     MigrateSchemaIfNeeded(conn);
                     SeedFieldConfigIfEmpty(conn);
@@ -160,33 +170,31 @@ namespace SlipManagement2
                     if (col.Equals("IsRequired",  StringComparison.OrdinalIgnoreCase)) hasIsRequired  = true;
                 }
 
-            if (!hasLookupTable)
+            // DEF-030: suggestion lists used to be nine fixed tables, each bound to a field
+            // SLOT through FieldConfig.LookupTable. A rename left the field pointing at the
+            // old domain, and newly typed values were written into the mismatched list, so
+            // the two progressively interleaved. Lists are now keyed by the field's label
+            // (LookupLists / LookupEntries) and the binding column is gone.
+            //
+            // The old tables and their contents are dropped rather than migrated — agreed
+            // with the project owner on 2026-08-11, since lists rebuild themselves from use
+            // within a day of operation. The column goes too: leaving a dead column behind
+            // is exactly what DEF-021 already records against the last refactor.
+            foreach (string legacy in new[] { "TruckRegs", "StockpileRefs", "ROMTypes",
+                                              "BlockNrs", "Sizes", "Clients",
+                                              "Destinations", "OrderNumbers", "Slots" })
+                ExecNQ(conn, "DROP TABLE IF EXISTS " + legacy + ";");
+
+            if (hasLookupTable)
             {
-                ExecNQ(conn, "ALTER TABLE FieldConfig ADD COLUMN LookupTable TEXT NOT NULL DEFAULT '';");
-                var lookups = new[] {
-                    ("Field1",  "TruckRegs"),
-                    ("Field2",  "StockpileRefs"),
-                    ("Field3",  "ROMTypes"),
-                    ("Field4",  "BlockNrs"),
-                    ("Field5",  "Sizes"),
-                    ("Field6",  "Destinations"),
-                    ("Field10", "Clients"),
-                };
-                foreach (var (slot, table) in lookups)
-                    using (var cmd = new SQLiteCommand("UPDATE FieldConfig SET LookupTable=@T WHERE FieldSlot=@S;", conn))
-                    {
-                        cmd.Parameters.AddWithValue("@T", table);
-                        cmd.Parameters.AddWithValue("@S", slot);
-                        cmd.ExecuteNonQuery();
-                    }
+                // DROP COLUMN needs SQLite 3.35+. If the bundled engine is older the column
+                // simply stays behind unused — nothing reads it any more either way.
+                try { ExecNQ(conn, "ALTER TABLE FieldConfig DROP COLUMN LookupTable;"); }
+                catch { }
             }
 
             if (!hasIsRequired)
                 ExecNQ(conn, "ALTER TABLE FieldConfig ADD COLUMN IsRequired INTEGER NOT NULL DEFAULT 0;");
-
-            // Backfill Field8/9 lookup tables for databases created before this was added
-            ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='OrderNumbers' WHERE FieldSlot='Field8' AND (LookupTable IS NULL OR LookupTable='');");
-            ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='Slots'        WHERE FieldSlot='Field9' AND (LookupTable IS NULL OR LookupTable='');");
 
             // Field1 and Field7 must always be IsRequired=1 — enforce on every startup
             // so existing databases are corrected regardless of when they were created.
@@ -258,31 +266,33 @@ namespace SlipManagement2
                 if ((long)cmd.ExecuteScalar() > 0) return;
             }
 
+            // No suggestion list is named here. A list comes into being the first time a value
+            // is saved under a label, so these defaults start with empty dropdowns and fill
+            // themselves as the operator works (DEF-030).
             var defaults = new[]
             {
-                ("Field1",  "Truck Reg",      1,  "TruckRegs"),
-                ("Field2",  "Stockpile Name", 2,  "StockpileRefs"),
-                ("Field3",  "Rom Type",       3,  "ROMTypes"),
-                ("Field4",  "Block Nr",       4,  "BlockNrs"),
-                ("Field5",  "Size",           5,  "Sizes"),
-                ("Field6",  "Destination",    6,  "Destinations"),
-                ("Field7",  "Tons",           7,  ""),
-                ("Field8",  "Order Number",   8,  "OrderNumbers"),
-                ("Field9",  "Slot",           9,  "Slots"),
-                ("Field10", "Client",         10, "Clients"),
+                ("Field1",  "Truck Reg",      1),
+                ("Field2",  "Stockpile Name", 2),
+                ("Field3",  "Rom Type",       3),
+                ("Field4",  "Block Nr",       4),
+                ("Field5",  "Size",           5),
+                ("Field6",  "Destination",    6),
+                ("Field7",  "Tons",           7),
+                ("Field8",  "Order Number",   8),
+                ("Field9",  "Slot",           9),
+                ("Field10", "Client",         10),
             };
 
-            foreach (var (slot, label, order, lookup) in defaults)
+            foreach (var (slot, label, order) in defaults)
             {
                 // Field1 and Field7 are always required — spec §4.2/4.4
                 int isRequired = (slot == "Field1" || slot == "Field7") ? 1 : 0;
                 using (var cmd = new SQLiteCommand(
-                    "INSERT INTO FieldConfig (FieldSlot, LabelName, OrderLine, Hidden, LookupTable, IsRequired) VALUES (@S, @L, @O, 0, @T, @R);", conn))
+                    "INSERT INTO FieldConfig (FieldSlot, LabelName, OrderLine, Hidden, IsRequired) VALUES (@S, @L, @O, 0, @R);", conn))
                 {
                     cmd.Parameters.AddWithValue("@S", slot);
                     cmd.Parameters.AddWithValue("@L", label);
                     cmd.Parameters.AddWithValue("@O", order);
-                    cmd.Parameters.AddWithValue("@T", lookup);
                     cmd.Parameters.AddWithValue("@R", isRequired);
                     cmd.ExecuteNonQuery();
                 }
@@ -1054,20 +1064,49 @@ namespace SlipManagement2
         // LOOKUP TABLES
         // ===================================================================
 
-        // tableName must be one of: TruckRegs, StockpileRefs, ROMTypes, BlockNrs, Sizes, Clients, Destinations
-        public static List<string> GetLookupValues(string tableName)
+        // A suggestion list is identified by the field's LABEL rather than by its slot, so a
+        // rename carries the field to a different list and renaming back returns the original
+        // one intact. Because the name is now a value and not a table identifier, every
+        // statement below is fully parameterised — the old design had to interpolate it.
+        //
+        // Matching ignores surrounding space, a trailing colon and case, so tidying a label
+        // ("Truck Reg:" to "Truck Reg") does not strand the values already collected under it.
+        public static string NormalizeListName(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label)) return "";
+            return label.Trim().TrimEnd(':').Trim();
+        }
+
+        // The list name for a field slot. Falls back to the same "Field 10" wording the tiles,
+        // the export and the entry form use, so a field left unlabelled still collects values.
+        public static string ListNameFor(string fieldSlot, string label)
+        {
+            string name = NormalizeListName(label);
+            return name.Length > 0 ? name : "Field " + fieldSlot.Replace("Field", "");
+        }
+
+        // Empty for a name that has never been used — a list is created by use, not up front.
+        public static List<string> GetLookupValues(string listName)
         {
             var list = new List<string>();
+            string name = NormalizeListName(listName);
+            if (name.Length == 0) return list;
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand($"SELECT Value FROM {tableName} ORDER BY Value;", conn))
-                    using (var r = cmd.ExecuteReader())
+                    using (var cmd = new SQLiteCommand(@"
+                        SELECT e.Value
+                        FROM   LookupEntries e
+                        JOIN   LookupLists   l ON l.ListID = e.ListID
+                        WHERE  l.ListName = @N
+                        ORDER BY e.Value;", conn))
                     {
-                        while (r.Read())
-                            list.Add(r["Value"].ToString());
+                        cmd.Parameters.AddWithValue("@N", name);
+                        using (var r = cmd.ExecuteReader())
+                            while (r.Read())
+                                list.Add(r["Value"].ToString());
                     }
                 }
             }
@@ -1075,17 +1114,27 @@ namespace SlipManagement2
             return list;
         }
 
-        // Removes an entry by value. Never touches the Slips table — historical text is unaffected.
-        public static void DeleteLookupValue(string tableName, string value)
+        // Creates the list on first use. Duplicates within a list are ignored.
+        public static void SaveLookupValue(string listName, string value)
         {
-            if (string.IsNullOrWhiteSpace(value)) return;
+            string name = NormalizeListName(listName);
+            if (name.Length == 0 || string.IsNullOrWhiteSpace(value)) return;
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand($"DELETE FROM {tableName} WHERE Value=@V;", conn))
+                    using (var cmd = new SQLiteCommand(
+                        "INSERT OR IGNORE INTO LookupLists (ListName) VALUES (@N);", conn))
                     {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                    using (var cmd = new SQLiteCommand(@"
+                        INSERT OR IGNORE INTO LookupEntries (ListID, Value)
+                        SELECT ListID, @V FROM LookupLists WHERE ListName = @N;", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
                         cmd.Parameters.AddWithValue("@V", value.Trim());
                         cmd.ExecuteNonQuery();
                     }
@@ -1094,23 +1143,129 @@ namespace SlipManagement2
             catch { }
         }
 
-        // Silently ignores duplicates (INSERT OR IGNORE). tableName same whitelist as above.
-        public static void SaveLookupValue(string tableName, string value)
+        // Removes one entry. Never touches the Slips table — a slip stores the text it was
+        // given and holds no reference to any list, so historical records are unaffected.
+        public static void DeleteLookupValue(string listName, string value)
         {
-            if (string.IsNullOrWhiteSpace(value)) return;
+            string name = NormalizeListName(listName);
+            if (name.Length == 0 || string.IsNullOrWhiteSpace(value)) return;
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand($"INSERT OR IGNORE INTO {tableName} (Value) VALUES (@V);", conn))
+                    using (var cmd = new SQLiteCommand(@"
+                        DELETE FROM LookupEntries
+                        WHERE  Value  = @V
+                          AND  ListID = (SELECT ListID FROM LookupLists WHERE ListName = @N);", conn))
                     {
+                        cmd.Parameters.AddWithValue("@N", name);
                         cmd.Parameters.AddWithValue("@V", value.Trim());
                         cmd.ExecuteNonQuery();
                     }
                 }
             }
             catch { }
+        }
+
+        // Empties a list but keeps it, so it stays attached to its label and starts refilling
+        // from the next slip. Deleting the list itself is DeleteLookupList.
+        public static void ClearLookupList(string listName)
+        {
+            string name = NormalizeListName(listName);
+            if (name.Length == 0) return;
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(@"
+                        DELETE FROM LookupEntries
+                        WHERE ListID = (SELECT ListID FROM LookupLists WHERE ListName = @N);", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Removes the list and everything in it. If a field still carries this label the list
+        // simply reappears, empty, the next time a value is saved against it.
+        public static void DeleteLookupList(string listName)
+        {
+            string name = NormalizeListName(listName);
+            if (name.Length == 0) return;
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(@"
+                        DELETE FROM LookupEntries
+                        WHERE ListID = (SELECT ListID FROM LookupLists WHERE ListName = @N);", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                    using (var cmd = new SQLiteCommand(
+                        "DELETE FROM LookupLists WHERE ListName = @N;", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public class LookupListInfo
+        {
+            public string Name  { get; set; }
+            public int    Count { get; set; }
+            // False once no field carries this label any more. Such a list is kept, not purged:
+            // renaming a field back to its old label is meant to bring its suggestions with it.
+            public bool   InUse { get; set; }
+        }
+
+        // Every list that exists, including ones no field currently points at, so the operator
+        // can see and clear up what earlier labels left behind.
+        public static List<LookupListInfo> GetAllLookupLists()
+        {
+            var lists = new List<LookupListInfo>();
+
+            var inUse = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in GetActiveFieldConfigurations())
+                if (kvp.Key != "Field7")
+                    inUse.Add(ListNameFor(kvp.Key, kvp.Value.CustomName));
+
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(@"
+                        SELECT l.ListName AS Name, COUNT(e.EntryID) AS N
+                        FROM   LookupLists   l
+                        LEFT JOIN LookupEntries e ON e.ListID = l.ListID
+                        GROUP BY l.ListID, l.ListName
+                        ORDER BY l.ListName;", conn))
+                    using (var r = cmd.ExecuteReader())
+                        while (r.Read())
+                        {
+                            string nm = r["Name"].ToString();
+                            lists.Add(new LookupListInfo
+                            {
+                                Name  = nm,
+                                Count = Convert.ToInt32(r["N"]),
+                                InUse = inUse.Contains(nm),
+                            });
+                        }
+                }
+            }
+            catch { }
+            return lists;
         }
 
         // ===================================================================
@@ -1122,7 +1277,6 @@ namespace SlipManagement2
             public string CustomName    { get; set; }
             public int    PositionOrder { get; set; }
             public bool   IsHidden      { get; set; }
-            public string LookupTable   { get; set; }
             public bool   IsRequired    { get; set; }
         }
 
@@ -1188,7 +1342,7 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    const string sql = "SELECT FieldSlot, LabelName, OrderLine, Hidden, LookupTable, IsRequired FROM FieldConfig ORDER BY OrderLine;";
+                    const string sql = "SELECT FieldSlot, LabelName, OrderLine, Hidden, IsRequired FROM FieldConfig ORDER BY OrderLine;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                     {
@@ -1200,7 +1354,6 @@ namespace SlipManagement2
                                 PositionOrder = Convert.ToInt32(r["OrderLine"]),
                                 IsHidden      = Convert.ToInt32(r["Hidden"])     == 1,
                                 IsRequired    = Convert.ToInt32(r["IsRequired"]) == 1,
-                                LookupTable   = r["LookupTable"].ToString(),
                             };
                         }
                     }

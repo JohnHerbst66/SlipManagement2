@@ -41,8 +41,10 @@ namespace SlipManagement2
                 targetLabel.Visible = true;
                 targetLabel.Text = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
 
-                // Field7 (Tons) is always a plain TextBox — numeric entry only, no lookup
-                if (!string.IsNullOrEmpty(cfg.LookupTable) && i != 7)
+                // Field7 (Tons) is always a plain TextBox — numeric entry only, no lookup.
+                // Every other field gets suggestions, drawn from the list held under its
+                // current label, which may well be empty on a new database (DEF-030).
+                if (i != 7)
                 {
                     // Overlay a ComboBox at the same position as the TextBox
                     targetBox.Visible = false;
@@ -59,16 +61,13 @@ namespace SlipManagement2
                         TabIndex           = i,
                     };
 
-                    var values = DatabaseManager.GetLookupValues(cfg.LookupTable);
+                    var values = DatabaseManager.GetLookupValues(
+                        DatabaseManager.ListNameFor(key, cfg.CustomName));
                     combo.Items.AddRange(values.ToArray());
 
-                    string tableName = cfg.LookupTable;
-                    combo.Leave += (s, e) =>
-                    {
-                        string val = combo.Text.Trim();
-                        if (!string.IsNullOrEmpty(val))
-                            DatabaseManager.SaveLookupValue(tableName, val);
-                    };
+                    // Deliberately no Leave handler. A value earns its place in the list when
+                    // the slip is actually written, not when the operator tabs past the box,
+                    // so a form opened and abandoned leaves nothing behind (CaptureLookupValues).
 
                     Control parent = targetBox.Parent ?? this;
                     parent.Controls.Add(combo);
@@ -277,6 +276,7 @@ namespace SlipManagement2
                     return;
             }
 
+            CaptureLookupValues(fields);
             UpdateOrCreateTile(fields);
             this.Close();
         }
@@ -378,6 +378,10 @@ namespace SlipManagement2
                     return;
             }
 
+            // The slip is on record by this point, whether or not the preview is confirmed,
+            // so its values count the same as they would from Save.
+            CaptureLookupValues(fields);
+
             var printPackage = new Dictionary<string, string>
             {
                 { "SlipID",     txtSlipID.Text },
@@ -405,6 +409,27 @@ namespace SlipManagement2
             }
 
             this.Close();
+        }
+
+        // Files the entered values as suggestions for next time, under each field's CURRENT
+        // label. Called only once the slip has actually been written, so an abandoned form
+        // contributes nothing and a renamed field starts collecting under its new name.
+        // Tons is skipped: a list of past tonnages would be noise rather than help.
+        private void CaptureLookupValues(string[] fields)
+        {
+            var cfgs = DatabaseManager.GetActiveFieldConfigurations();
+            for (int i = 1; i <= 10; i++)
+            {
+                if (i == 7) continue;
+                string key = "Field" + i;
+                if (!cfgs.TryGetValue(key, out var cfg)) continue;
+
+                string val = fields[i - 1];
+                if (string.IsNullOrWhiteSpace(val)) continue;
+
+                DatabaseManager.SaveLookupValue(
+                    DatabaseManager.ListNameFor(key, cfg.CustomName), val.Trim());
+            }
         }
 
         // Reads current values from all 10 fields — checks ComboBoxes before TextBoxes

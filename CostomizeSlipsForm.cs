@@ -239,8 +239,10 @@ namespace SlipManagement2
                 + "Slips already recorded are NOT changed. A slip stores the value that was "
                 + "entered, never the label, so past records keep reading exactly as they were "
                 + "printed.\n\n"
-                + "One thing that does NOT follow the new name: the dropdown suggestions for "
-                + "this field. Those still come from the list it was originally attached to.\n\n"
+                + "The dropdown suggestions follow the label. A name not used before starts "
+                + "with an empty list that fills as you work; a name used before brings its "
+                + "old suggestions back. Nothing is lost either way — the previous list is "
+                + "kept and can be seen under Manage Lookups.\n\n"
                 + "Continue?";
 
             return MessageBox.Show(msg, "Renaming Fields",
