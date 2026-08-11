@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Printing;
 using System.Globalization;
 using System.Windows.Forms;
@@ -37,6 +38,11 @@ namespace SlipManagement2
             BuildPresetRow();
             BuildRightColumn();
             LoadSettingsFromDb();
+
+            // Wire after load so preset restore doesn't interfere, then sync initial state
+            cmbPrinters.SelectedIndexChanged += (s, e) =>
+                btnCalibration.Enabled = cmbPrinters.SelectedItem != null;
+            btnCalibration.Enabled = cmbPrinters.SelectedItem != null;
         }
 
         // ===================================================================
@@ -214,8 +220,8 @@ namespace SlipManagement2
             if (isNew)
             {
                 txtPresetName.Text = "";
-                if (cmbPaperSizes.Items.Contains("Small240x102"))
-                    cmbPaperSizes.SelectedItem = "Small240x102";
+                if (cmbPaperSizes.Items.Contains(PaperSizeHelper.DefaultProfile))
+                    cmbPaperSizes.SelectedItem = PaperSizeHelper.DefaultProfile;
                 if (cmbOrientation.Items.Contains("Portrait"))
                     cmbOrientation.SelectedItem = "Portrait";
                 numCopies.Value    = 1;
@@ -272,7 +278,7 @@ namespace SlipManagement2
 
                 // Paper sizes
                 cmbPaperSizes.Items.Clear();
-                foreach (var s in new[] { "A4", "A5", "A6", "Letter", "Small151x151", "Small240x102" })
+                foreach (var s in PaperSizeHelper.ProfileNames)
                     cmbPaperSizes.Items.Add(s);
 
                 // Orientation
@@ -309,7 +315,7 @@ namespace SlipManagement2
                 }
 
                 string printer     = cmbPrinters.SelectedItem?.ToString()    ?? "EPSON LX-350";
-                string paperSize   = cmbPaperSizes.SelectedItem?.ToString()  ?? "Small240x102";
+                string paperSize   = cmbPaperSizes.SelectedItem?.ToString()  ?? PaperSizeHelper.DefaultProfile;
                 string orientation = cmbOrientation.SelectedItem?.ToString() ?? "Portrait";
                 string slipLength  = txtSlipLength.Text.Trim().Replace(',', '.');
                 string headerTitle = txtHeaderTitle.Text.Trim();
@@ -322,16 +328,7 @@ namespace SlipManagement2
                     return;
                 }
 
-                double wMM = 240, hMM = lenIn * 25.4;
-                switch (paperSize)
-                {
-                    case "A4":           wMM = 210;   hMM = 297;          break;
-                    case "A5":           wMM = 148;   hMM = 210;          break;
-                    case "A6":           wMM = 105;   hMM = 148;          break;
-                    case "Letter":       wMM = 215.9; hMM = 279.4;        break;
-                    case "Small151x151": wMM = 151;   hMM = 151;          break;
-                    case "Small240x102": wMM = 240;   hMM = lenIn * 25.4; break;
-                }
+                var (wMM, hMM) = PaperSizeHelper.GetDimensionsMm(paperSize, lenIn);
 
                 // HeaderTitle is global, not preset-specific
                 DatabaseManager.SaveGlobalSetting("HeaderTitle", headerTitle);
@@ -359,5 +356,22 @@ namespace SlipManagement2
         }
 
         private void btnCancelSettings_Click(object sender, EventArgs e) => Close();
+
+        // ===================================================================
+        // CALIBRATION PAGE — opens PrintCalibrationForm for the selected preset
+        // ===================================================================
+        private void btnCalibration_Click(object sender, EventArgs e)
+        {
+            string selected = cmbPresets.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(selected) || selected == NewPresetSentinel)
+            {
+                MessageBox.Show("Please select a saved preset first, then calibrate.",
+                    "No Preset Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var cal = new PrintCalibrationForm(null, selected))
+                cal.ShowDialog(this);
+        }
     }
 }

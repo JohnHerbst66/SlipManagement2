@@ -41,8 +41,10 @@ namespace SlipManagement2
                 targetLabel.Visible = true;
                 targetLabel.Text = string.IsNullOrWhiteSpace(cfg.CustomName) ? $"Field {i}:" : cfg.CustomName;
 
-                // Field7 (Tons) is always a plain TextBox — numeric entry only, no lookup
-                if (!string.IsNullOrEmpty(cfg.LookupTable) && i != 7)
+                // Field7 (Tons) is always a plain TextBox — numeric entry only, no lookup.
+                // Every other field gets suggestions, drawn from the list held under its
+                // current label, which may well be empty on a new database (DEF-030).
+                if (i != 7)
                 {
                     // Overlay a ComboBox at the same position as the TextBox
                     targetBox.Visible = false;
@@ -59,16 +61,13 @@ namespace SlipManagement2
                         TabIndex           = i,
                     };
 
-                    var values = DatabaseManager.GetLookupValues(cfg.LookupTable);
+                    var values = DatabaseManager.GetLookupValues(
+                        DatabaseManager.ListNameFor(key, cfg.CustomName));
                     combo.Items.AddRange(values.ToArray());
 
-                    string tableName = cfg.LookupTable;
-                    combo.Leave += (s, e) =>
-                    {
-                        string val = combo.Text.Trim();
-                        if (!string.IsNullOrEmpty(val))
-                            DatabaseManager.SaveLookupValue(tableName, val);
-                    };
+                    // Deliberately no Leave handler. A value earns its place in the list when
+                    // the slip is actually written, not when the operator tabs past the box,
+                    // so a form opened and abandoned leaves nothing behind (CaptureLookupValues).
 
                     Control parent = targetBox.Parent ?? this;
                     parent.Controls.Add(combo);
@@ -213,19 +212,33 @@ namespace SlipManagement2
                 MaximizeBox = false, MinimizeBox = false
             })
             {
-                var lbl    = new Label  { Text = "Reason (max 20 characters):", Left = 12, Top = 16, AutoSize = true };
+                var lbl    = new Label  { Text = "Reason:", Left = 12, Top = 16, AutoSize = true };
                 var txt    = new TextBox { Left = 12, Top = 38, Width = 316, MaxLength = 20 };
                 var ok     = new Button { Text = "Void Slip", Left = 75,  Top = 80, Width = 105,
                                           BackColor = Color.Tomato, FlatStyle = FlatStyle.Flat,
-                                          DialogResult = DialogResult.OK };
+                                          DialogResult = DialogResult.None };
                 var cancel = new Button { Text = "Cancel", Left = 195, Top = 80, Width = 80,
                                           DialogResult = DialogResult.Cancel };
+
+                // Validate inline — dialog stays open until reason is entered or user cancels
+                ok.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(txt.Text))
+                    {
+                        MessageBox.Show(
+                            "A void reason is required.\n\nPlease enter a reason before continuing, or click Cancel to abort.",
+                            "Reason Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        txt.Focus();
+                        return;
+                    }
+                    dialog.DialogResult = DialogResult.OK;
+                };
 
                 dialog.Controls.AddRange(new Control[] { lbl, txt, ok, cancel });
                 dialog.AcceptButton = ok;
                 dialog.CancelButton = cancel;
 
-                if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(txt.Text))
+                if (dialog.ShowDialog(this) == DialogResult.OK)
                     return txt.Text.Trim();
                 return null;
             }
@@ -263,6 +276,7 @@ namespace SlipManagement2
                     return;
             }
 
+            CaptureLookupValues(fields);
             UpdateOrCreateTile(fields);
             this.Close();
         }
@@ -309,6 +323,18 @@ namespace SlipManagement2
                 return;
             }
 
+            // Re-check the format here, not just via the Print button's enabled state — spec §4.4
+            // requires that a slip can never be printed with an unparseable tonnage even if the
+            // UI state is stale. Typing is already filtered, but a pasted value bypasses KeyPress.
+            if (!double.TryParse(fields[6], NumberStyles.Any, CultureInfo.InvariantCulture, out _))
+            {
+                MessageBox.Show("Tons must be a valid number (for example 36,98).\n\n" +
+                                "Please correct it before printing.",
+                    "Invalid Tons", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtField7.Focus();
+                return;
+            }
+
             var fieldConfigs = DatabaseManager.GetActiveFieldConfigurations();
             var missing = new System.Collections.Generic.List<string>();
             for (int i = 1; i <= 10; i++)
@@ -339,6 +365,22 @@ namespace SlipManagement2
                 if (ExistingSlipId <= 0) return;
                 txtSlipID.Text = ExistingSlipId.ToString();
             }
+            else
+            {
+                // The draft already exists, but the operator may have edited it since the last
+                // Save. Without this the paper carries the new values while the database keeps
+                // the old ones — the printed record and the stored record must never disagree
+                // (spec §6.2, the same proof-of-record rule behind DEF-002).
+                if (!DatabaseManager.UpdateSlipFields(
+                    ExistingSlipId,
+                    fields[0], fields[1], fields[2], fields[3], fields[4],
+                    fields[5], fields[6], fields[7], fields[8], fields[9]))
+                    return;
+            }
+
+            // The slip is on record by this point, whether or not the preview is confirmed,
+            // so its values count the same as they would from Save.
+            CaptureLookupValues(fields);
 
             var printPackage = new Dictionary<string, string>
             {
@@ -369,6 +411,27 @@ namespace SlipManagement2
             this.Close();
         }
 
+        // Files the entered values as suggestions for next time, under each field's CURRENT
+        // label. Called only once the slip has actually been written, so an abandoned form
+        // contributes nothing and a renamed field starts collecting under its new name.
+        // Tons is skipped: a list of past tonnages would be noise rather than help.
+        private void CaptureLookupValues(string[] fields)
+        {
+            var cfgs = DatabaseManager.GetActiveFieldConfigurations();
+            for (int i = 1; i <= 10; i++)
+            {
+                if (i == 7) continue;
+                string key = "Field" + i;
+                if (!cfgs.TryGetValue(key, out var cfg)) continue;
+
+                string val = fields[i - 1];
+                if (string.IsNullOrWhiteSpace(val)) continue;
+
+                DatabaseManager.SaveLookupValue(
+                    DatabaseManager.ListNameFor(key, cfg.CustomName), val.Trim());
+            }
+        }
+
         // Reads current values from all 10 fields — checks ComboBoxes before TextBoxes
         private string[] CollectFields()
         {
@@ -389,9 +452,17 @@ namespace SlipManagement2
 
         private void UpdateOrCreateTile(string[] fields)
         {
-            string regDisplay  = fields[0];
-            string tonsDisplay = string.IsNullOrWhiteSpace(fields[6]) ? "0" : fields[6];
-            string tileText    = $"Reg: {regDisplay}\nSlip: {ExistingSlipId}\nTons: {tonsDisplay}";
+            var data = new Dictionary<string, string>
+            {
+                { "SlipID",     ExistingSlipId.ToString() },
+                { "BillNumber", txtBilNumber.Text },
+            };
+            for (int i = 1; i <= 10; i++)
+                data.Add("Field" + i, fields[i - 1]);
+
+            // Same renderer the dashboard uses, so a tile created here and one loaded from the
+            // database always look identical and both honour the operator's Tile Display choice.
+            string tileText = DatabaseManager.BuildTileText(ExistingSlipId, data);
 
             if (this.Tag is Button existingCard)
             {
@@ -407,22 +478,14 @@ namespace SlipManagement2
 
             Button slipCard = new Button
             {
-                Size      = new Size(200, 110),
+                Size      = new Size(215, 132),
                 BackColor = Color.LightYellow,
                 FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Arial", 10, FontStyle.Bold),
+                Font      = new Font("Arial", 9, FontStyle.Bold),
                 Text      = tileText,
             };
 
-            var memoryCache = new Dictionary<string, string>
-            {
-                { "SlipID",     ExistingSlipId.ToString() },
-                { "BillNumber", txtBilNumber.Text },
-            };
-            for (int i = 1; i <= 10; i++)
-                memoryCache.Add("Field" + i, fields[i - 1]);
-
-            slipCard.Tag    = memoryCache;
+            slipCard.Tag    = data;
             slipCard.Click += SlipCard_Click;
 
             Main mainPage = (Main)Application.OpenForms["Main"];

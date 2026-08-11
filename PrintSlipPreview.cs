@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Printing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Windows.Forms;
 
 namespace SlipManagement2
@@ -9,9 +10,17 @@ namespace SlipManagement2
     public partial class PrintSlipPreview : Form
     {
         private readonly Dictionary<string, string> _slipData;
-        private PrintDocument       _printDocument;
-        private PrintPreviewControl _previewControl;
-        private Label               _errorLabel;
+
+        private double _pageWidthMm;
+        private double _pageHeightMm;
+
+        private PreviewCanvas _canvas;
+        private Bitmap        _slipBitmap;
+
+        private sealed class PreviewCanvas : Panel
+        {
+            public PreviewCanvas() { DoubleBuffered = true; }
+        }
 
         public PrintSlipPreview(Dictionary<string, string> slipData)
         {
@@ -20,14 +29,16 @@ namespace SlipManagement2
 
             pnlSlip.Visible = false;
 
-            Text            = "Slip Preview — confirm before printing";
-            ClientSize      = new Size(850, 700);
+            Text            = "Print Preview";
+            ClientSize      = new Size(900, 650);
             StartPosition   = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
 
+            (_pageWidthMm, _pageHeightMm) = SlipPrintEngine.GetPageDimensionsMm();
+
             BuildLayout();
-            RefreshPreview();
+            RebuildSlipBitmap();
         }
 
         // ===================================================================
@@ -35,7 +46,6 @@ namespace SlipManagement2
         // ===================================================================
         private void BuildLayout()
         {
-            // Button panel — docked to bottom
             var buttonPanel = new Panel
             {
                 Dock      = DockStyle.Bottom,
@@ -43,47 +53,171 @@ namespace SlipManagement2
                 BackColor = SystemColors.Control
             };
 
-            // Centre three buttons: Print | Adjust Settings | Cancel
-            // Total button width: 130 + 150 + 130 = 410, gaps 2×20 = 40 → 450px
-            // Horizontal offset from panel left: (850 - 450) / 2 = 200
-            int bx = 200;
+            int bx = 30;
+            var btnPrint = MakeButton("Print",              bx, Color.LightGreen,   130); bx += 150;
+            var btnCal   = MakeButton("Calibrate Print",    bx, Color.LightSkyBlue, 160); bx += 180;
+            var btnCncl  = MakeButton("Cancel",             bx, Color.LightCoral,   130);
 
-            var btnPrint = MakeButton("Print", bx, Color.LightGreen, 130);
             btnPrint.Click += BtnPrint_Click;
-            bx += 130 + 20;
-
-            var btnAdjust = MakeButton("Adjust Settings", bx, Color.LightSkyBlue, 150);
-            btnAdjust.Click += BtnAdjust_Click;
-            bx += 150 + 20;
-
-            var btnCancel = MakeButton("Cancel", bx, Color.LightCoral, 130);
-            btnCancel.Click += BtnCancel_Click;
+            btnCal.Click   += BtnCalibrate_Click;
+            btnCncl.Click  += (s, e) => { DialogResult = System.Windows.Forms.DialogResult.Cancel; Close(); };
 
             buttonPanel.Controls.Add(btnPrint);
-            buttonPanel.Controls.Add(btnAdjust);
-            buttonPanel.Controls.Add(btnCancel);
+            buttonPanel.Controls.Add(btnCal);
+            buttonPanel.Controls.Add(btnCncl);
 
-            // Preview fills remaining space
-            _previewControl = new PrintPreviewControl
-            {
-                Dock     = DockStyle.Fill,
-                AutoZoom = true
-            };
-
-            // Error label shown when preview generation fails
-            _errorLabel = new Label
+            _canvas = new PreviewCanvas
             {
                 Dock      = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = Color.DarkRed,
-                Font      = new Font("Arial", 10),
-                Visible   = false
+                BackColor = Color.FromArgb(80, 80, 80),
             };
+            _canvas.Paint += Canvas_Paint;
 
-            // Fill must be added before Bottom so docking resolves correctly
-            Controls.Add(_previewControl);
-            Controls.Add(_errorLabel);
+            Controls.Add(_canvas);
             Controls.Add(buttonPanel);
+        }
+
+        // ===================================================================
+        // CANVAS PAINT — display only (no controls)
+        // ===================================================================
+        private void Canvas_Paint(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+
+            float fitScale = Math.Min(
+                (_canvas.Width  - 40f) / (float)_pageWidthMm,
+                (_canvas.Height - 40f) / (float)_pageHeightMm);
+
+            float pageW = (float)_pageWidthMm  * fitScale;
+            float pageH = (float)_pageHeightMm * fitScale;
+            float pageX = (_canvas.Width  - pageW) / 2f;
+            float pageY = (_canvas.Height - pageH) / 2f;
+            var pageRect = new RectangleF(pageX, pageY, pageW, pageH);
+
+            // shadow
+            g.FillRectangle(Brushes.Black, pageX + 4, pageY + 4, pageW, pageH);
+            // page
+            g.FillRectangle(Brushes.White, pageRect);
+
+            // grid every 10mm
+            float step = 10f * fitScale;
+            using (var gridPen = new Pen(Color.FromArgb(200, 200, 200), 1))
+            {
+                for (float gx = pageX; gx <= pageX + pageW + 0.5f; gx += step)
+                    g.DrawLine(gridPen, gx, pageY, gx, pageY + pageH);
+                for (float gy = pageY; gy <= pageY + pageH + 0.5f; gy += step)
+                    g.DrawLine(gridPen, pageX, gy, pageX + pageW, gy);
+            }
+
+            using (var pagePen = new Pen(Color.DarkGray, 2))
+                g.DrawRectangle(pagePen, pageX, pageY, pageW - 1, pageH - 1);
+
+            // margin boundary (from saved profile)
+            var profile = DatabaseManager.GetActiveProfile();
+            float mLeft   = (float)profile.MarginLeftMM   * fitScale;
+            float mTop    = (float)profile.MarginTopMM    * fitScale;
+            float mRight  = (float)profile.MarginRightMM  * fitScale;
+            float mBottom = (float)profile.MarginBottomMM * fitScale;
+            float mX = pageX + mLeft;
+            float mY = pageY + mTop;
+            float mW = pageW - mLeft - mRight;
+            float mH = pageH - mTop  - mBottom;
+
+            if (mW > 0 && mH > 0)
+            {
+                using (var redPen = new Pen(Color.Red, 1) { DashStyle = DashStyle.Dash })
+                    g.DrawRectangle(redPen, mX, mY, mW - 1, mH - 1);
+
+                if (_slipBitmap != null)
+                {
+                    // Apply the profile's calibration offsets, exactly as the print job does
+                    // in RenderSlipFromDimensions — otherwise a calibrated slip previews
+                    // centred but prints shifted.
+                    float offX = profile.SlipOffsetXMm * fitScale;
+                    float offY = profile.SlipOffsetYMm * fitScale;
+
+                    g.SetClip(pageRect);
+                    g.DrawImage(_slipBitmap, new RectangleF(mX + offX, mY + offY, mW, mH));
+                    g.ResetClip();
+                }
+            }
+        }
+
+        // ===================================================================
+        // SLIP BITMAP
+        // ===================================================================
+        private void RebuildSlipBitmap()
+        {
+            var profile = DatabaseManager.GetActiveProfile();
+            double leftMm   = profile.MarginLeftMM;
+            double topMm    = profile.MarginTopMM;
+            double rightMm  = profile.MarginRightMM;
+            double bottomMm = profile.MarginBottomMM;
+
+            double slipWMm = _pageWidthMm  - leftMm - rightMm;
+            double slipHMm = _pageHeightMm - topMm  - bottomMm;
+
+            if (slipWMm <= 0 || slipHMm <= 0)
+            {
+                _slipBitmap?.Dispose();
+                _slipBitmap = null;
+                _canvas?.Invalidate();
+                return;
+            }
+
+            // Font scale comes from the active profile — the same value BuildPrintDocument
+            // passes to the real print job. It used to be read from GlobalSettings["SlipFontScale"],
+            // which stopped being written when calibration moved into PrinterProfiles. Existing
+            // databases still hold that orphaned value, so the preview kept rendering at the old
+            // pre-refactor scale while the printer used the profile's — e.g. 2.75 vs 1.95.
+            float fontScale = profile.SlipFontScale;
+
+            int wU = Math.Max(1, (int)(slipWMm / 25.4 * 100));
+            int hU = Math.Max(1, (int)(slipHMm / 25.4 * 100));
+
+            var bmp = new Bitmap(wU, hU);
+            bmp.SetResolution(100, 100);
+
+            using (var bg = Graphics.FromImage(bmp))
+            {
+                bg.Clear(Color.White);
+                bg.SmoothingMode     = SmoothingMode.AntiAlias;
+                bg.TextRenderingHint = TextRenderingHint.AntiAlias;
+                SlipPrintEngine.RenderSlipForPreview(
+                    bg, new RectangleF(0, 0, wU, hU), _slipData, fontScale);
+            }
+
+            _slipBitmap?.Dispose();
+            _slipBitmap = bmp;
+            _canvas?.Invalidate();
+        }
+
+        // ===================================================================
+        // BUTTONS
+        // ===================================================================
+        private void BtnPrint_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                SlipPrintEngine.BuildPrintDocument(_slipData).Print();
+                DialogResult = System.Windows.Forms.DialogResult.OK;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Print failed: " + ex.Message, "Printer Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void BtnCalibrate_Click(object sender, EventArgs e)
+        {
+            using (var cal = new PrintCalibrationForm(_slipData))
+                cal.ShowDialog(this);
+
+            // Refresh after calibration in case settings changed
+            (_pageWidthMm, _pageHeightMm) = SlipPrintEngine.GetPageDimensionsMm();
+            RebuildSlipBitmap();
         }
 
         private static Button MakeButton(string text, int x, Color back, int width)
@@ -96,65 +230,5 @@ namespace SlipManagement2
                 FlatStyle = FlatStyle.Flat,
                 Font      = new Font("Arial", 10, FontStyle.Bold)
             };
-
-        // ===================================================================
-        // PREVIEW REFRESH — called on open AND after settings change
-        // ===================================================================
-        private void RefreshPreview()
-        {
-            try
-            {
-                _printDocument          = SlipPrintEngine.BuildPrintDocument(_slipData);
-                _previewControl.Document = _printDocument;
-                _previewControl.InvalidatePreview();  // clears cached pages, forces re-render
-                _previewControl.Visible = true;
-                _errorLabel.Visible     = false;
-            }
-            catch (Exception ex)
-            {
-                _previewControl.Visible = false;
-                _errorLabel.Text    = "Preview unavailable: " + ex.Message +
-                                      "\n\nYou can still click Print to send to the printer.";
-                _errorLabel.Visible = true;
-
-                // Keep a valid document so Print still works even if preview failed
-                if (_printDocument == null)
-                    _printDocument = SlipPrintEngine.BuildPrintDocument(_slipData);
-            }
-        }
-
-        // ===================================================================
-        // BUTTON HANDLERS
-        // ===================================================================
-        private void BtnPrint_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                _printDocument.Print();
-                DialogResult = DialogResult.OK;
-                Close();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Print failed: " + ex.Message, "Printer Error",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void BtnAdjust_Click(object sender, EventArgs e)
-        {
-            using (var sf = new PrinterSettingsForm())
-                sf.ShowDialog(this);
-
-            // Always refresh — the user may have changed settings even if they
-            // cancelled the settings dialog (the preview should show current DB state).
-            RefreshPreview();
-        }
-
-        private void BtnCancel_Click(object sender, EventArgs e)
-        {
-            DialogResult = DialogResult.Cancel;
-            Close();
-        }
     }
 }

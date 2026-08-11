@@ -34,6 +34,7 @@
             this.txtSlipLength = new System.Windows.Forms.TextBox();
             this.btnSaveSettings = new System.Windows.Forms.Button();
             this.btnCancelSettings = new System.Windows.Forms.Button();
+            this.btnCalibration = new System.Windows.Forms.Button();
             this.label3 = new System.Windows.Forms.Label();
             this.cmbPaperSizes = new System.Windows.Forms.ComboBox();
             this.cmbOrientation = new System.Windows.Forms.ComboBox();
@@ -100,7 +101,19 @@
             this.btnCancelSettings.Text = "❌ Cancel";
             this.btnCancelSettings.UseVisualStyleBackColor = false;
             this.btnCancelSettings.Click += new System.EventHandler(this.btnCancelSettings_Click);
-            // 
+            //
+            // btnCalibration
+            //
+            this.btnCalibration.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.btnCalibration.Location = new System.Drawing.Point(37, 328);
+            this.btnCalibration.Name = "btnCalibration";
+            this.btnCalibration.Size = new System.Drawing.Size(140, 51);
+            this.btnCalibration.TabIndex = 12;
+            this.btnCalibration.Text = "📐 Calibration Page";
+            this.btnCalibration.UseVisualStyleBackColor = true;
+            this.btnCalibration.Enabled = false;
+            this.btnCalibration.Click += new System.EventHandler(this.btnCalibration_Click);
+            //
             // label3
             // 
             this.label3.AutoSize = true;
@@ -164,6 +177,7 @@
             this.Controls.Add(this.cmbOrientation);
             this.Controls.Add(this.cmbPaperSizes);
             this.Controls.Add(this.label3);
+            this.Controls.Add(this.btnCalibration);
             this.Controls.Add(this.btnCancelSettings);
             this.Controls.Add(this.btnSaveSettings);
             this.Controls.Add(this.txtSlipLength);
@@ -192,5 +206,6 @@
         private System.Windows.Forms.NumericUpDown numCopies;
         private System.Windows.Forms.Label label4;
         private System.Windows.Forms.Label label5;
+        private System.Windows.Forms.Button btnCalibration;
     }
 }

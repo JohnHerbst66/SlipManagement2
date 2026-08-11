@@ -32,8 +32,9 @@ namespace SlipManagement2
                             Field1  TEXT, Field2  TEXT, Field3  TEXT, Field4  TEXT,  Field5  TEXT,
                             Field6  TEXT, Field7  TEXT, Field8  TEXT, Field9  TEXT,  Field10 TEXT,
                             VoidReason  TEXT,
-                            CreatedAt   TEXT    NOT NULL DEFAULT (datetime('now')),
-                            PrintedAt   TEXT
+                            CreatedAt   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+                            PrintedAt   TEXT,
+                            VoidedAt    TEXT
                         );");
 
                     ExecNQ(conn, @"
@@ -50,7 +51,6 @@ namespace SlipManagement2
                             LabelName   TEXT    NOT NULL,
                             OrderLine   INTEGER NOT NULL,
                             Hidden      INTEGER NOT NULL DEFAULT 0,
-                            LookupTable TEXT    NOT NULL DEFAULT '',
                             IsRequired  INTEGER NOT NULL DEFAULT 0
                         );");
 
@@ -78,15 +78,26 @@ namespace SlipManagement2
                             IsActive       INTEGER NOT NULL DEFAULT 0
                         );");
 
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS TruckRegs     (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS StockpileRefs (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS ROMTypes      (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS BlockNrs      (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Sizes         (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Clients       (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Destinations  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS OrderNumbers  (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
-                    ExecNQ(conn, "CREATE TABLE IF NOT EXISTS Slots         (ID INTEGER PRIMARY KEY AUTOINCREMENT, Value TEXT NOT NULL UNIQUE);");
+                    // Dropdown suggestion lists (DEF-030). A list belongs to a field's LABEL,
+                    // not to its slot, so renaming a field moves it to a different list and
+                    // renaming it back returns the original one. Nothing is created here: a
+                    // fresh database has no lists at all until values are actually entered.
+                    ExecNQ(conn, @"
+                        CREATE TABLE IF NOT EXISTS LookupLists (
+                            ListID    INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ListName  TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+                            CreatedAt TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+                        );");
+
+                    // Kept separate from LookupLists so an emptied list still exists and stays
+                    // attached to its label — clearing a list and deleting it are different acts.
+                    ExecNQ(conn, @"
+                        CREATE TABLE IF NOT EXISTS LookupEntries (
+                            EntryID INTEGER PRIMARY KEY AUTOINCREMENT,
+                            ListID  INTEGER NOT NULL REFERENCES LookupLists(ListID),
+                            Value   TEXT    NOT NULL,
+                            UNIQUE (ListID, Value)
+                        );");
 
                     MigrateSchemaIfNeeded(conn);
                     SeedFieldConfigIfEmpty(conn);
@@ -132,6 +143,22 @@ namespace SlipManagement2
         // Adds columns introduced after the initial schema without wiping any data.
         private static void MigrateSchemaIfNeeded(SQLiteConnection conn)
         {
+            // Slips.VoidedAt — records when a slip was voided, so the Voided history view can be
+            // filtered by the date the void actually happened rather than by the creation date.
+            bool hasVoidedAt = false;
+            using (var cmd = new SQLiteCommand("PRAGMA table_info(Slips);", conn))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read())
+                    if (r["name"].ToString().Equals("VoidedAt", StringComparison.OrdinalIgnoreCase))
+                        hasVoidedAt = true;
+
+            if (!hasVoidedAt)
+                ExecNQ(conn, "ALTER TABLE Slips ADD COLUMN VoidedAt TEXT;");
+
+            // Slips voided before this column existed have no recorded void time. Fall back to
+            // CreatedAt so they still appear in a date-filtered Voided view rather than vanishing.
+            ExecNQ(conn, "UPDATE Slips SET VoidedAt = CreatedAt WHERE Status = 'Voided' AND VoidedAt IS NULL;");
+
             bool hasLookupTable = false;
             bool hasIsRequired  = false;
             using (var cmd = new SQLiteCommand("PRAGMA table_info(FieldConfig);", conn))
@@ -143,50 +170,56 @@ namespace SlipManagement2
                     if (col.Equals("IsRequired",  StringComparison.OrdinalIgnoreCase)) hasIsRequired  = true;
                 }
 
-            if (!hasLookupTable)
+            // DEF-030: suggestion lists used to be nine fixed tables, each bound to a field
+            // SLOT through FieldConfig.LookupTable. A rename left the field pointing at the
+            // old domain, and newly typed values were written into the mismatched list, so
+            // the two progressively interleaved. Lists are now keyed by the field's label
+            // (LookupLists / LookupEntries) and the binding column is gone.
+            //
+            // The old tables and their contents are dropped rather than migrated — agreed
+            // with the project owner on 2026-08-11, since lists rebuild themselves from use
+            // within a day of operation. The column goes too: leaving a dead column behind
+            // is exactly what DEF-021 already records against the last refactor.
+            foreach (string legacy in new[] { "TruckRegs", "StockpileRefs", "ROMTypes",
+                                              "BlockNrs", "Sizes", "Clients",
+                                              "Destinations", "OrderNumbers", "Slots" })
+                ExecNQ(conn, "DROP TABLE IF EXISTS " + legacy + ";");
+
+            if (hasLookupTable)
             {
-                ExecNQ(conn, "ALTER TABLE FieldConfig ADD COLUMN LookupTable TEXT NOT NULL DEFAULT '';");
-                var lookups = new[] {
-                    ("Field1",  "TruckRegs"),
-                    ("Field2",  "StockpileRefs"),
-                    ("Field3",  "ROMTypes"),
-                    ("Field4",  "BlockNrs"),
-                    ("Field5",  "Sizes"),
-                    ("Field6",  "Destinations"),
-                    ("Field10", "Clients"),
-                };
-                foreach (var (slot, table) in lookups)
-                    using (var cmd = new SQLiteCommand("UPDATE FieldConfig SET LookupTable=@T WHERE FieldSlot=@S;", conn))
-                    {
-                        cmd.Parameters.AddWithValue("@T", table);
-                        cmd.Parameters.AddWithValue("@S", slot);
-                        cmd.ExecuteNonQuery();
-                    }
+                // DROP COLUMN needs SQLite 3.35+. If the bundled engine is older the column
+                // simply stays behind unused — nothing reads it any more either way.
+                try { ExecNQ(conn, "ALTER TABLE FieldConfig DROP COLUMN LookupTable;"); }
+                catch { }
             }
 
             if (!hasIsRequired)
                 ExecNQ(conn, "ALTER TABLE FieldConfig ADD COLUMN IsRequired INTEGER NOT NULL DEFAULT 0;");
 
-            // Backfill Field8/9 lookup tables for databases created before this was added
-            ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='OrderNumbers' WHERE FieldSlot='Field8' AND (LookupTable IS NULL OR LookupTable='');");
-            ExecNQ(conn, "UPDATE FieldConfig SET LookupTable='Slots'        WHERE FieldSlot='Field9' AND (LookupTable IS NULL OR LookupTable='');");
-
             // Field1 and Field7 must always be IsRequired=1 — enforce on every startup
             // so existing databases are corrected regardless of when they were created.
             ExecNQ(conn, "UPDATE FieldConfig SET IsRequired=1 WHERE FieldSlot='Field1' OR FieldSlot='Field7';");
 
-            // PrinterProfiles migrations — add ProfileName, Orientation, SlipLengthIn columns
-            bool hasProfileName  = false;
-            bool hasOrientation  = false;
-            bool hasSlipLengthIn = false;
+            // PrinterProfiles migrations — add ProfileName, Orientation, SlipLengthIn, and calibration columns
+            bool hasProfileName   = false;
+            bool hasOrientation   = false;
+            bool hasSlipLengthIn  = false;
+            bool hasSlipFontScale = false;
+            bool hasSlipOffsetXMm = false;
+            bool hasSlipOffsetYMm = false;
+            bool hasCopiesPerPage = false;
             using (var cmd = new SQLiteCommand("PRAGMA table_info(PrinterProfiles);", conn))
             using (var r = cmd.ExecuteReader())
                 while (r.Read())
                 {
                     string col = r["name"].ToString();
-                    if (col.Equals("ProfileName",  StringComparison.OrdinalIgnoreCase)) hasProfileName  = true;
-                    if (col.Equals("Orientation",  StringComparison.OrdinalIgnoreCase)) hasOrientation  = true;
-                    if (col.Equals("SlipLengthIn", StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn = true;
+                    if (col.Equals("ProfileName",   StringComparison.OrdinalIgnoreCase)) hasProfileName   = true;
+                    if (col.Equals("Orientation",   StringComparison.OrdinalIgnoreCase)) hasOrientation   = true;
+                    if (col.Equals("SlipLengthIn",  StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn  = true;
+                    if (col.Equals("SlipFontScale", StringComparison.OrdinalIgnoreCase)) hasSlipFontScale = true;
+                    if (col.Equals("SlipOffsetXMm", StringComparison.OrdinalIgnoreCase)) hasSlipOffsetXMm = true;
+                    if (col.Equals("SlipOffsetYMm", StringComparison.OrdinalIgnoreCase)) hasSlipOffsetYMm = true;
+                    if (col.Equals("CopiesPerPage", StringComparison.OrdinalIgnoreCase)) hasCopiesPerPage = true;
                 }
 
             if (!hasProfileName)
@@ -211,6 +244,34 @@ namespace SlipManagement2
                 // Backfill from stored HeightMM for custom-length profiles
                 ExecNQ(conn, "UPDATE PrinterProfiles SET SlipLengthIn = ROUND(HeightMM / 25.4, 2) WHERE Mode = 'Small240x102' AND HeightMM > 0;");
             }
+
+            // Per-preset calibration columns (previously stored as shared GlobalSettings)
+            if (!hasSlipFontScale)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipFontScale REAL NOT NULL DEFAULT 1.0;");
+            if (!hasSlipOffsetXMm)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipOffsetXMm REAL NOT NULL DEFAULT 0.0;");
+            if (!hasSlipOffsetYMm)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN SlipOffsetYMm REAL NOT NULL DEFAULT 0.0;");
+            if (!hasCopiesPerPage)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN CopiesPerPage INTEGER NOT NULL DEFAULT 1;");
+
+            // DEF-021: the three columns above superseded GlobalSettings rows of the same name,
+            // but the 3 July migration left those rows in place. Nothing has read them since, so
+            // there is no runtime symptom — the harm is that they still hold their pre-refactor
+            // values and read as authoritative. A database created on 7 August reported
+            // SlipFontScale 2.75 while the active profile was printing at 1.95, and offsets of
+            // 0 and -1.5 against a live -1 and 0. Removing them here, alongside the columns that
+            // replaced them, is what the original migration should have done.
+            //
+            // The three keys are named rather than swept by a whitelist of live settings: an
+            // unrecognised key is far likelier to be one added after this code was written than
+            // one this refactor stranded, and deleting it would be the worse mistake.
+            ExecNQ(conn, @"
+                DELETE FROM GlobalSettings
+                WHERE SettingKey IN ('SlipFontScale', 'SlipOffsetXMm', 'SlipOffsetYMm');");
+
+            // 3-copies layout has been removed (asymmetric 2×2 with blank cell). Migrate to 2.
+            ExecNQ(conn, "UPDATE PrinterProfiles SET CopiesPerPage = 2 WHERE CopiesPerPage = 3;");
         }
 
         private static void SeedFieldConfigIfEmpty(SQLiteConnection conn)
@@ -220,31 +281,33 @@ namespace SlipManagement2
                 if ((long)cmd.ExecuteScalar() > 0) return;
             }
 
+            // No suggestion list is named here. A list comes into being the first time a value
+            // is saved under a label, so these defaults start with empty dropdowns and fill
+            // themselves as the operator works (DEF-030).
             var defaults = new[]
             {
-                ("Field1",  "Truck Reg",      1,  "TruckRegs"),
-                ("Field2",  "Stockpile Name", 2,  "StockpileRefs"),
-                ("Field3",  "Rom Type",       3,  "ROMTypes"),
-                ("Field4",  "Block Nr",       4,  "BlockNrs"),
-                ("Field5",  "Size",           5,  "Sizes"),
-                ("Field6",  "Destination",    6,  "Destinations"),
-                ("Field7",  "Tons",           7,  ""),
-                ("Field8",  "Order Number",   8,  "OrderNumbers"),
-                ("Field9",  "Slot",           9,  "Slots"),
-                ("Field10", "Client",         10, "Clients"),
+                ("Field1",  "Truck Reg",      1),
+                ("Field2",  "Stockpile Name", 2),
+                ("Field3",  "Rom Type",       3),
+                ("Field4",  "Block Nr",       4),
+                ("Field5",  "Size",           5),
+                ("Field6",  "Destination",    6),
+                ("Field7",  "Tons",           7),
+                ("Field8",  "Order Number",   8),
+                ("Field9",  "Slot",           9),
+                ("Field10", "Client",         10),
             };
 
-            foreach (var (slot, label, order, lookup) in defaults)
+            foreach (var (slot, label, order) in defaults)
             {
                 // Field1 and Field7 are always required — spec §4.2/4.4
                 int isRequired = (slot == "Field1" || slot == "Field7") ? 1 : 0;
                 using (var cmd = new SQLiteCommand(
-                    "INSERT INTO FieldConfig (FieldSlot, LabelName, OrderLine, Hidden, LookupTable, IsRequired) VALUES (@S, @L, @O, 0, @T, @R);", conn))
+                    "INSERT INTO FieldConfig (FieldSlot, LabelName, OrderLine, Hidden, IsRequired) VALUES (@S, @L, @O, 0, @R);", conn))
                 {
                     cmd.Parameters.AddWithValue("@S", slot);
                     cmd.Parameters.AddWithValue("@L", label);
                     cmd.Parameters.AddWithValue("@O", order);
-                    cmd.Parameters.AddWithValue("@T", lookup);
                     cmd.Parameters.AddWithValue("@R", isRequired);
                     cmd.ExecuteNonQuery();
                 }
@@ -291,9 +354,11 @@ namespace SlipManagement2
                 INSERT INTO PrinterProfiles
                     (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
                      MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
-                     NumCopies, Orientation, SlipLengthIn, IsActive)
+                     NumCopies, Orientation, SlipLengthIn, IsActive,
+                     SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage)
                 VALUES ('Default', 'EPSON LX-350', 'Small240x102', 240, 139.7,
-                        10, 10, 10, 10, 1, 'Portrait', 5.5, 1);");
+                        10, 10, 10, 10, 1, 'Portrait', 5.5, 1,
+                        1.0, 0.0, 0.0, 1);");
         }
 
         // ===================================================================
@@ -310,9 +375,15 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
+                    // CreatedAt is set explicitly rather than left to the column default. All
+                    // timestamps use the clock of whatever machine the app runs on — SQLite's
+                    // datetime('now') is UTC, which would disagree with BillNumber and with the
+                    // date printed on the slip, both of which come from C# DateTime.Now. Setting
+                    // it here also fixes databases whose table was created before this change,
+                    // without rebuilding the table.
                     const string sql = @"
-                        INSERT INTO Slips (BillNumber, Field1, Field2, Field3, Field4, Field5, Field6, Field7, Field8, Field9, Field10)
-                        VALUES (@BN, @F1, @F2, @F3, @F4, @F5, @F6, @F7, @F8, @F9, @F10);";
+                        INSERT INTO Slips (BillNumber, CreatedAt, Field1, Field2, Field3, Field4, Field5, Field6, Field7, Field8, Field9, Field10)
+                        VALUES (@BN, datetime('now','localtime'), @F1, @F2, @F3, @F4, @F5, @F6, @F7, @F8, @F9, @F10);";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@BN",  billNumber);
@@ -387,7 +458,13 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand("UPDATE Slips SET Status='Printed', PrintedAt=datetime('now') WHERE SlipID=@ID;", conn))
+                    // COALESCE, not a plain assignment: PrintedAt records the FIRST time this slip
+                    // was printed and must never move. A slip can be reprinted any number of times
+                    // (spec §5.2) without changing its place in the record. Reprints currently go
+                    // through PrintSlipPreview and never reach here, but the guard means no future
+                    // code path can overwrite the original print date either.
+                    using (var cmd = new SQLiteCommand(
+                        "UPDATE Slips SET Status='Printed', PrintedAt=COALESCE(PrintedAt, datetime('now','localtime')) WHERE SlipID=@ID;", conn))
                     {
                         cmd.Parameters.AddWithValue("@ID", slipId);
                         cmd.ExecuteNonQuery();
@@ -403,13 +480,14 @@ namespace SlipManagement2
         // Voids a Printed slip from the history form; returns true if a row was affected.
         public static bool VoidPrintedSlip(int slipId, string reason)
         {
+            if (reason != null && reason.Length > 20) reason = reason.Substring(0, 20);
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
                     using (var cmd = new SQLiteCommand(
-                        "UPDATE Slips SET Status='Voided', VoidReason=@R WHERE SlipID=@ID AND Status='Printed';", conn))
+                        "UPDATE Slips SET Status='Voided', VoidReason=@R, VoidedAt=datetime('now','localtime') WHERE SlipID=@ID AND Status='Printed';", conn))
                     {
                         cmd.Parameters.AddWithValue("@ID", slipId);
                         cmd.Parameters.AddWithValue("@R",  reason);
@@ -427,12 +505,13 @@ namespace SlipManagement2
         // Sets Status='Voided'; only transitions from Unprinted. Reason is mandatory (max 20 chars per spec).
         public static void VoidSlip(int slipId, string reason)
         {
+            if (reason != null && reason.Length > 20) reason = reason.Substring(0, 20);
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand("UPDATE Slips SET Status='Voided', VoidReason=@R WHERE SlipID=@ID AND Status='Unprinted';", conn))
+                    using (var cmd = new SQLiteCommand("UPDATE Slips SET Status='Voided', VoidReason=@R, VoidedAt=datetime('now','localtime') WHERE SlipID=@ID AND Status='Unprinted';", conn))
                     {
                         cmd.Parameters.AddWithValue("@ID", slipId);
                         cmd.Parameters.AddWithValue("@R",  reason);
@@ -450,6 +529,22 @@ namespace SlipManagement2
         // SLIP QUERIES — used by SlipsHistoryForm
         // ===================================================================
 
+        // The date column a history search should filter on, chosen by status.
+        //
+        // A slip's dates diverge: one created on the 1st can be printed on the 2nd. Filtering
+        // everything by CreatedAt meant a "printed this week" search silently missed slips
+        // created earlier, so each status is filtered by the date its own event happened.
+        // COALESCE guards rows written before the relevant column existed.
+        private static string DateColumnFor(string status)
+        {
+            switch (status)
+            {
+                case "Printed": return "COALESCE(PrintedAt, CreatedAt)";
+                case "Voided":  return "COALESCE(VoidedAt,  CreatedAt)";
+                default:        return "CreatedAt";
+            }
+        }
+
         // Returns slips matching status + date range + optional per-field equality filters.
         // fieldFilters keys must be "Field1"–"Field10" (controlled by the caller, never user input).
         public static DataTable QuerySlips(string status, DateTime from, DateTime to,
@@ -460,8 +555,9 @@ namespace SlipManagement2
             {
                 string fromStr = from.ToString("yyyy-MM-dd") + " 00:00:00";
                 string toStr   = to.ToString("yyyy-MM-dd")   + " 23:59:59";
+                string dateCol = DateColumnFor(status);
 
-                string sql = "SELECT * FROM Slips WHERE Status=@Status AND CreatedAt BETWEEN @From AND @To";
+                string sql = $"SELECT * FROM Slips WHERE Status=@Status AND {dateCol} BETWEEN @From AND @To";
                 var paramList = new List<SQLiteParameter>
                 {
                     new SQLiteParameter("@Status", status),
@@ -476,7 +572,7 @@ namespace SlipManagement2
                         paramList.Add(new SQLiteParameter($"@{kv.Key}", "%" + kv.Value + "%"));
                     }
 
-                sql += " ORDER BY CreatedAt DESC;";
+                sql += $" ORDER BY {dateCol} DESC;";
 
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
@@ -502,8 +598,10 @@ namespace SlipManagement2
             {
                 string fromStr = from.ToString("yyyy-MM-dd") + " 00:00:00";
                 string toStr   = to.ToString("yyyy-MM-dd")   + " 23:59:59";
+                // Must use the same date column as QuerySlips, or the filter dropdowns would
+                // offer values belonging to rows the grid isn't showing.
                 string sql     = $"SELECT DISTINCT {fieldKey} FROM Slips WHERE Status=@Status " +
-                                 $"AND CreatedAt BETWEEN @From AND @To " +
+                                 $"AND {DateColumnFor(status)} BETWEEN @From AND @To " +
                                  $"AND {fieldKey} IS NOT NULL AND {fieldKey} != '' ORDER BY {fieldKey};";
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
@@ -569,8 +667,6 @@ namespace SlipManagement2
                         {
                             int    slipId  = Convert.ToInt32(reader["SlipID"]);
                             string billNum = reader["BillNumber"].ToString();
-                            string f1      = reader["Field1"]?.ToString() ?? "";
-                            string f7      = reader["Field7"]?.ToString() ?? "";
 
                             var data = new Dictionary<string, string>
                             {
@@ -580,8 +676,7 @@ namespace SlipManagement2
                             for (int i = 1; i <= 10; i++)
                                 data["Field" + i] = reader["Field" + i]?.ToString() ?? "";
 
-                            Button tile = BuildTile(slipId, f1, f7, data);
-                            panel.Controls.Add(tile);
+                            panel.Controls.Add(BuildTile(slipId, data));
                         }
                     }
                 }
@@ -592,18 +687,75 @@ namespace SlipManagement2
             }
         }
 
-        private static Button BuildTile(int slipId, string f1, string f7, Dictionary<string, string> data)
-        {
-            string reg  = string.IsNullOrWhiteSpace(f1) ? "No Reg" : f1;
-            string tons = string.IsNullOrWhiteSpace(f7) ? "0" : f7;
+        // ===================================================================
+        // MAIN PAGE TILE DISPLAY
+        // ===================================================================
 
+        // A tile shows the slip number plus up to this many operator-chosen fields.
+        public const int MaxTileFields = 4;
+
+        // The field slots shown on a tile, in the order the operator picked them.
+        public static List<string> GetTileFieldSlots()
+        {
+            var slots = new List<string>();
+            foreach (string part in GetGlobalSetting("TileFields", "Field1,Field7").Split(','))
+            {
+                string s = part.Trim();
+                if (s.Length == 0 || slots.Contains(s)) continue;
+                slots.Add(s);
+                if (slots.Count >= MaxTileFields) break;
+            }
+            if (slots.Count == 0) slots.Add("Field1");
+            return slots;
+        }
+
+        public static void SaveTileFieldSlots(IEnumerable<string> slots)
+        {
+            var list = new List<string>();
+            foreach (string s in slots)
+            {
+                if (string.IsNullOrWhiteSpace(s) || list.Contains(s.Trim())) continue;
+                list.Add(s.Trim());
+                if (list.Count >= MaxTileFields) break;
+            }
+            SaveGlobalSetting("TileFields", string.Join(",", list));
+        }
+
+        // Builds a tile's caption: the slip number, then one "Label: value" line per configured
+        // field, using whatever the field is currently called. Both the dashboard loader and
+        // CreateSlip call this, so a tile never renders differently depending on which code
+        // path produced it.
+        public static string BuildTileText(int slipId, Dictionary<string, string> data)
+        {
+            var cfgs = GetActiveFieldConfigurations();
+            var sb   = new System.Text.StringBuilder();
+            sb.Append("Slip: ").Append(slipId);
+
+            foreach (string slot in GetTileFieldSlots())
+            {
+                if (!cfgs.TryGetValue(slot, out var cfg)) continue;
+
+                string label = string.IsNullOrWhiteSpace(cfg.CustomName)
+                    ? "Field " + slot.Replace("Field", "")
+                    : cfg.CustomName.TrimEnd(':').Trim();
+
+                string value = (data.TryGetValue(slot, out string v) && !string.IsNullOrWhiteSpace(v))
+                    ? v : "-";
+
+                sb.AppendLine().Append(label).Append(": ").Append(value);
+            }
+            return sb.ToString();
+        }
+
+        private static Button BuildTile(int slipId, Dictionary<string, string> data)
+        {
             var tile = new Button
             {
-                Size      = new Size(200, 110),
+                Size      = new Size(215, 132),
                 BackColor = Color.LightYellow,
                 FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Arial", 10, FontStyle.Bold),
-                Text      = $"Reg: {reg}\nSlip: {slipId}\nTons: {tons}",
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                Text      = BuildTileText(slipId, data),
                 Tag       = data,
             };
 
@@ -634,6 +786,10 @@ namespace SlipManagement2
             public double MarginRightMM  { get; set; } = 10;
             public double MarginBottomMM { get; set; } = 10;
             public int    NumCopies      { get; set; } = 1;
+            public float  SlipFontScale  { get; set; } = 1.0f;
+            public float  SlipOffsetXMm  { get; set; } = 0f;
+            public float  SlipOffsetYMm  { get; set; } = 0f;
+            public int    CopiesPerPage  { get; set; } = 1;
         }
 
         // Returns the active PrinterProfile row, or sensible defaults if none exists yet.
@@ -644,7 +800,9 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    const string sql = "SELECT MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM, NumCopies FROM PrinterProfiles WHERE IsActive=1 LIMIT 1;";
+                    const string sql = @"SELECT MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
+                                                NumCopies, SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage
+                                         FROM PrinterProfiles WHERE IsActive=1 LIMIT 1;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                     {
@@ -657,6 +815,10 @@ namespace SlipManagement2
                                 MarginRightMM  = Convert.ToDouble(r["MarginRightMM"]),
                                 MarginBottomMM = Convert.ToDouble(r["MarginBottomMM"]),
                                 NumCopies      = Convert.ToInt32(r["NumCopies"]),
+                                SlipFontScale  = Convert.ToSingle(r["SlipFontScale"]),
+                                SlipOffsetXMm  = Convert.ToSingle(r["SlipOffsetXMm"]),
+                                SlipOffsetYMm  = Convert.ToSingle(r["SlipOffsetYMm"]),
+                                CopiesPerPage  = Convert.ToInt32(r["CopiesPerPage"]),
                             };
                         }
                     }
@@ -683,6 +845,10 @@ namespace SlipManagement2
             public string Orientation      { get; set; }
             public double SlipLengthIn     { get; set; }
             public bool   IsActive         { get; set; }
+            public float  SlipFontScale    { get; set; } = 1.0f;
+            public float  SlipOffsetXMm    { get; set; } = 0f;
+            public float  SlipOffsetYMm    { get; set; } = 0f;
+            public int    CopiesPerPage    { get; set; } = 1;
         }
 
         private static PrinterProfileData ReadProfileRow(System.Data.SQLite.SQLiteDataReader r)
@@ -703,6 +869,10 @@ namespace SlipManagement2
                 Orientation      = r["Orientation"].ToString(),
                 SlipLengthIn     = Convert.ToDouble(r["SlipLengthIn"]),
                 IsActive         = Convert.ToInt32(r["IsActive"]) == 1,
+                SlipFontScale    = Convert.ToSingle(r["SlipFontScale"]),
+                SlipOffsetXMm    = Convert.ToSingle(r["SlipOffsetXMm"]),
+                SlipOffsetYMm    = Convert.ToSingle(r["SlipOffsetYMm"]),
+                CopiesPerPage    = Convert.ToInt32(r["CopiesPerPage"]),
             };
         }
 
@@ -744,7 +914,10 @@ namespace SlipManagement2
             return null;
         }
 
-        // Upserts a preset by name, marks it active, and syncs GlobalSettings so SlipPrintEngine stays consistent.
+        // Upserts a preset by name, marks it active, and syncs GlobalSettings so legacy code stays consistent.
+        // Calibration columns (SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage) are intentionally
+        // excluded from the ON CONFLICT UPDATE so they are preserved when editing an existing preset from
+        // PrinterSettingsForm.  Use SaveCalibrationToProfile to write calibration values.
         public static void SaveOrUpdatePrinterProfile(
             string profileName, string printerName, string paperSizeProfile,
             double widthMM, double heightMM,
@@ -758,11 +931,26 @@ namespace SlipManagement2
                     conn.Open();
                     ExecNQ(conn, "UPDATE PrinterProfiles SET IsActive=0;");
                     const string sql = @"
-                        INSERT OR REPLACE INTO PrinterProfiles
+                        INSERT INTO PrinterProfiles
                             (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
                              MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
-                             NumCopies, Orientation, SlipLengthIn, IsActive)
-                        VALUES (@PN, @P, @M, @W, @H, @T, @L, @R, @B, @C, @O, @SL, 1);";
+                             NumCopies, Orientation, SlipLengthIn, IsActive,
+                             SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage)
+                        VALUES (@PN, @P, @M, @W, @H, @T, @L, @R, @B, @C, @O, @SL, 1,
+                                1.0, 0.0, 0.0, 1)
+                        ON CONFLICT(ProfileName) DO UPDATE SET
+                            PrinterName    = excluded.PrinterName,
+                            Mode           = excluded.Mode,
+                            WidthMM        = excluded.WidthMM,
+                            HeightMM       = excluded.HeightMM,
+                            MarginTopMM    = excluded.MarginTopMM,
+                            MarginLeftMM   = excluded.MarginLeftMM,
+                            MarginRightMM  = excluded.MarginRightMM,
+                            MarginBottomMM = excluded.MarginBottomMM,
+                            NumCopies      = excluded.NumCopies,
+                            Orientation    = excluded.Orientation,
+                            SlipLengthIn   = excluded.SlipLengthIn,
+                            IsActive       = excluded.IsActive;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@PN", profileName);
@@ -783,6 +971,36 @@ namespace SlipManagement2
                 SyncGlobalSettingsFromProfile(printerName, paperSizeProfile, orientation, numCopies, slipLengthIn);
             }
             catch (Exception ex) { MessageBox.Show("Error saving printer profile: " + ex.Message); }
+        }
+
+        // Writes only the calibration columns for an existing profile row.
+        public static void SaveCalibrationToProfile(string profileName,
+            float slipFontScale, float slipOffsetXMm, float slipOffsetYMm, int copiesPerPage)
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    const string sql = @"
+                        UPDATE PrinterProfiles SET
+                            SlipFontScale = @FS,
+                            SlipOffsetXMm = @OX,
+                            SlipOffsetYMm = @OY,
+                            CopiesPerPage = @CP
+                        WHERE ProfileName = @PN;";
+                    using (var cmd = new SQLiteCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@PN", profileName);
+                        cmd.Parameters.AddWithValue("@FS", slipFontScale);
+                        cmd.Parameters.AddWithValue("@OX", slipOffsetXMm);
+                        cmd.Parameters.AddWithValue("@OY", slipOffsetYMm);
+                        cmd.Parameters.AddWithValue("@CP", copiesPerPage);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex) { MessageBox.Show("Error saving calibration: " + ex.Message); }
         }
 
         // Flips IsActive to the named preset and syncs GlobalSettings.
@@ -861,20 +1079,49 @@ namespace SlipManagement2
         // LOOKUP TABLES
         // ===================================================================
 
-        // tableName must be one of: TruckRegs, StockpileRefs, ROMTypes, BlockNrs, Sizes, Clients, Destinations
-        public static List<string> GetLookupValues(string tableName)
+        // A suggestion list is identified by the field's LABEL rather than by its slot, so a
+        // rename carries the field to a different list and renaming back returns the original
+        // one intact. Because the name is now a value and not a table identifier, every
+        // statement below is fully parameterised — the old design had to interpolate it.
+        //
+        // Matching ignores surrounding space, a trailing colon and case, so tidying a label
+        // ("Truck Reg:" to "Truck Reg") does not strand the values already collected under it.
+        public static string NormalizeListName(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label)) return "";
+            return label.Trim().TrimEnd(':').Trim();
+        }
+
+        // The list name for a field slot. Falls back to the same "Field 10" wording the tiles,
+        // the export and the entry form use, so a field left unlabelled still collects values.
+        public static string ListNameFor(string fieldSlot, string label)
+        {
+            string name = NormalizeListName(label);
+            return name.Length > 0 ? name : "Field " + fieldSlot.Replace("Field", "");
+        }
+
+        // Empty for a name that has never been used — a list is created by use, not up front.
+        public static List<string> GetLookupValues(string listName)
         {
             var list = new List<string>();
+            string name = NormalizeListName(listName);
+            if (name.Length == 0) return list;
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand($"SELECT Value FROM {tableName} ORDER BY Value;", conn))
-                    using (var r = cmd.ExecuteReader())
+                    using (var cmd = new SQLiteCommand(@"
+                        SELECT e.Value
+                        FROM   LookupEntries e
+                        JOIN   LookupLists   l ON l.ListID = e.ListID
+                        WHERE  l.ListName = @N
+                        ORDER BY e.Value;", conn))
                     {
-                        while (r.Read())
-                            list.Add(r["Value"].ToString());
+                        cmd.Parameters.AddWithValue("@N", name);
+                        using (var r = cmd.ExecuteReader())
+                            while (r.Read())
+                                list.Add(r["Value"].ToString());
                     }
                 }
             }
@@ -882,17 +1129,27 @@ namespace SlipManagement2
             return list;
         }
 
-        // Removes an entry by value. Never touches the Slips table — historical text is unaffected.
-        public static void DeleteLookupValue(string tableName, string value)
+        // Creates the list on first use. Duplicates within a list are ignored.
+        public static void SaveLookupValue(string listName, string value)
         {
-            if (string.IsNullOrWhiteSpace(value)) return;
+            string name = NormalizeListName(listName);
+            if (name.Length == 0 || string.IsNullOrWhiteSpace(value)) return;
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand($"DELETE FROM {tableName} WHERE Value=@V;", conn))
+                    using (var cmd = new SQLiteCommand(
+                        "INSERT OR IGNORE INTO LookupLists (ListName) VALUES (@N);", conn))
                     {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                    using (var cmd = new SQLiteCommand(@"
+                        INSERT OR IGNORE INTO LookupEntries (ListID, Value)
+                        SELECT ListID, @V FROM LookupLists WHERE ListName = @N;", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
                         cmd.Parameters.AddWithValue("@V", value.Trim());
                         cmd.ExecuteNonQuery();
                     }
@@ -901,23 +1158,129 @@ namespace SlipManagement2
             catch { }
         }
 
-        // Silently ignores duplicates (INSERT OR IGNORE). tableName same whitelist as above.
-        public static void SaveLookupValue(string tableName, string value)
+        // Removes one entry. Never touches the Slips table — a slip stores the text it was
+        // given and holds no reference to any list, so historical records are unaffected.
+        public static void DeleteLookupValue(string listName, string value)
         {
-            if (string.IsNullOrWhiteSpace(value)) return;
+            string name = NormalizeListName(listName);
+            if (name.Length == 0 || string.IsNullOrWhiteSpace(value)) return;
             try
             {
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    using (var cmd = new SQLiteCommand($"INSERT OR IGNORE INTO {tableName} (Value) VALUES (@V);", conn))
+                    using (var cmd = new SQLiteCommand(@"
+                        DELETE FROM LookupEntries
+                        WHERE  Value  = @V
+                          AND  ListID = (SELECT ListID FROM LookupLists WHERE ListName = @N);", conn))
                     {
+                        cmd.Parameters.AddWithValue("@N", name);
                         cmd.Parameters.AddWithValue("@V", value.Trim());
                         cmd.ExecuteNonQuery();
                     }
                 }
             }
             catch { }
+        }
+
+        // Empties a list but keeps it, so it stays attached to its label and starts refilling
+        // from the next slip. Deleting the list itself is DeleteLookupList.
+        public static void ClearLookupList(string listName)
+        {
+            string name = NormalizeListName(listName);
+            if (name.Length == 0) return;
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(@"
+                        DELETE FROM LookupEntries
+                        WHERE ListID = (SELECT ListID FROM LookupLists WHERE ListName = @N);", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Removes the list and everything in it. If a field still carries this label the list
+        // simply reappears, empty, the next time a value is saved against it.
+        public static void DeleteLookupList(string listName)
+        {
+            string name = NormalizeListName(listName);
+            if (name.Length == 0) return;
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(@"
+                        DELETE FROM LookupEntries
+                        WHERE ListID = (SELECT ListID FROM LookupLists WHERE ListName = @N);", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                    using (var cmd = new SQLiteCommand(
+                        "DELETE FROM LookupLists WHERE ListName = @N;", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@N", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public class LookupListInfo
+        {
+            public string Name  { get; set; }
+            public int    Count { get; set; }
+            // False once no field carries this label any more. Such a list is kept, not purged:
+            // renaming a field back to its old label is meant to bring its suggestions with it.
+            public bool   InUse { get; set; }
+        }
+
+        // Every list that exists, including ones no field currently points at, so the operator
+        // can see and clear up what earlier labels left behind.
+        public static List<LookupListInfo> GetAllLookupLists()
+        {
+            var lists = new List<LookupListInfo>();
+
+            var inUse = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in GetActiveFieldConfigurations())
+                if (kvp.Key != "Field7")
+                    inUse.Add(ListNameFor(kvp.Key, kvp.Value.CustomName));
+
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand(@"
+                        SELECT l.ListName AS Name, COUNT(e.EntryID) AS N
+                        FROM   LookupLists   l
+                        LEFT JOIN LookupEntries e ON e.ListID = l.ListID
+                        GROUP BY l.ListID, l.ListName
+                        ORDER BY l.ListName;", conn))
+                    using (var r = cmd.ExecuteReader())
+                        while (r.Read())
+                        {
+                            string nm = r["Name"].ToString();
+                            lists.Add(new LookupListInfo
+                            {
+                                Name  = nm,
+                                Count = Convert.ToInt32(r["N"]),
+                                InUse = inUse.Contains(nm),
+                            });
+                        }
+                }
+            }
+            catch { }
+            return lists;
         }
 
         // ===================================================================
@@ -929,7 +1292,6 @@ namespace SlipManagement2
             public string CustomName    { get; set; }
             public int    PositionOrder { get; set; }
             public bool   IsHidden      { get; set; }
-            public string LookupTable   { get; set; }
             public bool   IsRequired    { get; set; }
         }
 
@@ -995,7 +1357,7 @@ namespace SlipManagement2
                 using (var conn = new SQLiteConnection(ConnStr))
                 {
                     conn.Open();
-                    const string sql = "SELECT FieldSlot, LabelName, OrderLine, Hidden, LookupTable, IsRequired FROM FieldConfig ORDER BY OrderLine;";
+                    const string sql = "SELECT FieldSlot, LabelName, OrderLine, Hidden, IsRequired FROM FieldConfig ORDER BY OrderLine;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                     {
@@ -1007,7 +1369,6 @@ namespace SlipManagement2
                                 PositionOrder = Convert.ToInt32(r["OrderLine"]),
                                 IsHidden      = Convert.ToInt32(r["Hidden"])     == 1,
                                 IsRequired    = Convert.ToInt32(r["IsRequired"]) == 1,
-                                LookupTable   = r["LookupTable"].ToString(),
                             };
                         }
                     }
@@ -1034,7 +1395,8 @@ namespace SlipManagement2
                                COALESCE(SUM(CAST(Field7 AS REAL)), 0) AS TotalTons
                         FROM Slips
                         WHERE Status = 'Printed'
-                          AND date(PrintedAt, 'localtime') = date('now', 'localtime');";
+                          AND date(PrintedAt) = date('now', 'localtime');";
+                    // PrintedAt is already machine-local, so it must NOT be converted again here.
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
                         if (r.Read())
@@ -1062,7 +1424,7 @@ namespace SlipManagement2
                                COUNT(*) AS Loads
                         FROM Slips
                         WHERE Status = 'Printed'
-                          AND date(PrintedAt, 'localtime') = date('now', 'localtime')
+                          AND date(PrintedAt) = date('now', 'localtime')
                           AND {fieldSlot} IS NOT NULL AND {fieldSlot} != ''
                         GROUP BY {fieldSlot}
                         ORDER BY Tons DESC
@@ -1082,6 +1444,27 @@ namespace SlipManagement2
         // ===================================================================
         // BACKUP
         // ===================================================================
+
+        // Removes the database file.
+        //
+        // Intended for one situation only: abandoning First-Time Setup after something created
+        // the database early. At that point the file can only hold seeded defaults, never
+        // operator data, because Program.cs shows setup only when no database exists. Do NOT
+        // call this from anywhere a real record could be lost.
+        public static bool DeleteDatabaseFile()
+        {
+            try
+            {
+                // Release pooled handles, or the file stays locked and the delete silently fails
+                SQLiteConnection.ClearAllPools();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                if (File.Exists(DbPath)) File.Delete(DbPath);
+                return !File.Exists(DbPath);
+            }
+            catch { return false; }
+        }
 
         // Copies the DB to a user-chosen path. Returns true on success.
         public static bool PerformManualBackup(string destinationPath)
@@ -1111,6 +1494,12 @@ namespace SlipManagement2
                 string stamp      = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 string backupFile = Path.Combine(backupDir, $"WeighbridgeData_{stamp}.db");
                 File.Copy(DbPath, backupFile, overwrite: true);
+
+                // File.Copy carries the SOURCE file's timestamp across, so a fresh backup of a
+                // database that hasn't been written to in a while arrives already "old". Stamp it
+                // with the real backup time, otherwise the purge below measures the age of the
+                // data instead of the age of the backup and can delete a copy made moments ago.
+                File.SetLastWriteTime(backupFile, DateTime.Now);
 
                 // Rolling 30-day purge
                 foreach (string f in Directory.GetFiles(backupDir, "WeighbridgeData_*.db"))

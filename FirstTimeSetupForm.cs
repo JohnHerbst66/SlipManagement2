@@ -17,6 +17,10 @@ namespace SlipManagement2
         private CheckBox chkSavePreset;
         private TextBox  txtPresetName;
 
+        // "Customize Fields..." has to create the database so CustomizeSlipsForm can load the
+        // field list. That must not count as completing setup — see OnFormClosing.
+        private bool _dbCreatedDuringSetup;
+
         public FirstTimeSetupForm()
         {
             Text            = "Welcome — First Time Setup";
@@ -108,9 +112,9 @@ namespace SlipManagement2
                 Size          = new Size(220, 22),
                 DropDownStyle = ComboBoxStyle.DropDownList,
             };
-            foreach (var s in new[] { "A4", "A5", "A6", "Letter", "Small151x151", "Small240x102" })
+            foreach (var s in PaperSizeHelper.ProfileNames)
                 cmbPaperSize.Items.Add(s);
-            cmbPaperSize.SelectedItem = "Small240x102";
+            cmbPaperSize.SelectedItem = PaperSizeHelper.DefaultProfile;
             cmbPaperSize.SelectedIndexChanged += (s, ev) => UpdateSlipLengthVisibility();
             Controls.Add(cmbPaperSize);
 
@@ -118,10 +122,14 @@ namespace SlipManagement2
             Controls.Add(lblSlipLength);
             txtSlipLength = new TextBox
             {
-                Location = new Point(256, 270),
-                Size     = new Size(100, 22),
-                Text     = "5.5",
+                Location  = new Point(256, 270),
+                Size      = new Size(100, 22),
+                Text      = "5.5",
+                MaxLength = 6,
             };
+            // Reject letters as they are typed rather than only complaining on Get Started.
+            // A rejected keystroke is unmistakable; a message box after the fact is easy to miss.
+            txtSlipLength.KeyPress += TxtSlipLength_KeyPress;
             Controls.Add(txtSlipLength);
 
             // Preset save option
@@ -185,9 +193,33 @@ namespace SlipManagement2
             UpdateSlipLengthVisibility();
         }
 
+        // Slip length is a measurement in inches: digits plus at most one decimal separator.
+        // Mirrors the filtering already applied to the Tons field on CreateSlip.
+        private void TxtSlipLength_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (char.IsControl(e.KeyChar)) return;
+
+            if (!char.IsDigit(e.KeyChar) && e.KeyChar != '.' && e.KeyChar != ',')
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (e.KeyChar == '.' || e.KeyChar == ',')
+            {
+                // Build what the text WOULD become, so replacing a selected separator still works
+                string simulated = txtSlipLength.Text
+                    .Remove(txtSlipLength.SelectionStart, txtSlipLength.SelectionLength)
+                    .Insert(txtSlipLength.SelectionStart, e.KeyChar.ToString());
+
+                if (simulated.Split('.', ',').Length - 1 > 1)
+                    e.Handled = true;
+            }
+        }
+
         private void UpdateSlipLengthVisibility()
         {
-            bool isCustom = cmbPaperSize.SelectedItem?.ToString() == "Small240x102";
+            bool isCustom = PaperSizeHelper.UsesCustomLength(cmbPaperSize.SelectedItem?.ToString());
             lblSlipLength.Visible = isCustom;
             txtSlipLength.Visible = isCustom;
         }
@@ -205,8 +237,22 @@ namespace SlipManagement2
         {
             // Database must exist before CustomizeSlipsForm can load FieldConfig
             DatabaseManager.InitializeDatabase();
+            _dbCreatedDuringSetup = true;
             using (var customize = new CustomizeSlipsForm())
                 customize.ShowDialog(this);
+        }
+
+        // "Get Started" is the only action that commits a setup. If the operator abandons this
+        // screen after Customize Fields created the database, remove it again — otherwise the
+        // next launch sees a database, skips setup entirely, and lands on a half-configured
+        // system holding the seeded defaults instead of the operator's choices, with no way
+        // back to this screen short of deleting the file by hand.
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+
+            if (DialogResult != DialogResult.OK && _dbCreatedDuringSetup)
+                DatabaseManager.DeleteDatabaseFile();
         }
 
         private void BtnStart_Click(object sender, EventArgs e)
@@ -241,40 +287,35 @@ namespace SlipManagement2
             DatabaseManager.SaveGlobalSetting("LogoPath",    txtLogoPath.Text.Trim());
 
             string printer   = cmbPrinter.SelectedItem?.ToString();
-            string paperSize = cmbPaperSize.SelectedItem?.ToString() ?? "Small240x102";
+            string paperSize = cmbPaperSize.SelectedItem?.ToString() ?? PaperSizeHelper.DefaultProfile;
             if (!string.IsNullOrEmpty(printer))
                 DatabaseManager.SaveGlobalSetting("SelectedPrinter", printer);
             DatabaseManager.SaveGlobalSetting("PaperSizeProfile", paperSize);
             DatabaseManager.SaveGlobalSetting("SlipCustomLength",
                 slipLenIn.ToString("G", CultureInfo.InvariantCulture));
 
-            // 4. Save printer preset if the checkbox is ticked
-            if (chkSavePreset.Checked)
-            {
-                string presetName = txtPresetName.Text.Trim();
-                if (string.IsNullOrEmpty(presetName)) presetName = "Default";
+            // 4. Write the chosen printer/paper values to a profile.
+            //
+            // This happens whether or not "save as preset" is ticked. The checkbox only decides
+            // WHICH profile gets the values — a named one, or the "Default" that InitializeDatabase
+            // just seeded. It must never mean "discard them": the seeded Default is hardcoded to
+            // Small240x102 and is the active profile, and SlipPrintEngine.GetPageDimensionsMm reads
+            // the active profile ahead of GlobalSettings. Leaving it untouched meant an operator who
+            // selected A4 and unticked the box silently got a 240 x 139.7 mm page.
+            string presetName = chkSavePreset.Checked ? txtPresetName.Text.Trim() : "Default";
+            if (string.IsNullOrEmpty(presetName)) presetName = "Default";
 
-                double wMM = 240, hMM = slipLenIn * 25.4;
-                switch (paperSize)
-                {
-                    case "A4":           wMM = 210;   hMM = 297;          break;
-                    case "A5":           wMM = 148;   hMM = 210;          break;
-                    case "A6":           wMM = 105;   hMM = 148;          break;
-                    case "Letter":       wMM = 215.9; hMM = 279.4;        break;
-                    case "Small151x151": wMM = 151;   hMM = 151;          break;
-                    case "Small240x102": wMM = 240;   hMM = slipLenIn * 25.4; break;
-                }
+            var (wMM, hMM) = PaperSizeHelper.GetDimensionsMm(paperSize, slipLenIn);
 
-                DatabaseManager.SaveOrUpdatePrinterProfile(
-                    presetName,
-                    printer ?? "EPSON LX-350",
-                    paperSize,
-                    wMM, hMM,
-                    10, 10, 10, 10,
-                    1,
-                    "Portrait",
-                    slipLenIn);
-            }
+            DatabaseManager.SaveOrUpdatePrinterProfile(
+                presetName,
+                printer ?? "EPSON LX-350",
+                paperSize,
+                wMM, hMM,
+                10, 10, 10, 10,
+                1,
+                "Portrait",
+                slipLenIn);
 
             DialogResult = DialogResult.OK;
             Close();

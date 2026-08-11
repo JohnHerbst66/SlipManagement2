@@ -107,6 +107,12 @@ namespace SlipManagement2
                                  | AnchorStyles.Left | AnchorStyles.Right;
             dataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 
+            // The grid is already ReadOnly (designer), but that alone still leaves the
+            // new-row placeholder visible — a phantom empty row under the real results,
+            // which reads as a record that isn't there. History never creates rows.
+            dataGridView1.AllowUserToAddRows    = false;
+            dataGridView1.AllowUserToDeleteRows = false;
+
             _gridSummaryLabel = new Label
             {
                 Text      = "Total Slips: —   |   Total Tons: —",
@@ -360,6 +366,14 @@ namespace SlipManagement2
                 if (dataGridView1.Columns.Contains("PrintedAt"))
                     dataGridView1.Columns["PrintedAt"].Visible = !_showVoided;
 
+                // VoidedAt is the date the Voided view now filters on, so it belongs beside
+                // the reason — and is meaningless on a printed slip.
+                if (dataGridView1.Columns.Contains("VoidedAt"))
+                {
+                    dataGridView1.Columns["VoidedAt"].Visible    = _showVoided;
+                    dataGridView1.Columns["VoidedAt"].HeaderText = "Voided At";
+                }
+
                 UpdateGridSummary(dt);
 
                 // Re-align filter boxes after column widths are finalised.
@@ -404,6 +418,8 @@ namespace SlipManagement2
 
             viewLabels["SlipID"].Text     = "Slip ID: "     + (row.Cells["SlipID"].Value?.ToString() ?? "");
             viewLabels["BillNumber"].Text = "Bill Number: " + currentSelectedBilNumber;
+            if (editTextBoxes.ContainsKey("SlipID"))
+                editTextBoxes["SlipID"].Text = row.Cells["SlipID"].Value?.ToString() ?? "";
 
             for (int i = 1; i <= 10; i++)
             {
@@ -462,6 +478,11 @@ namespace SlipManagement2
             {
                 { "SlipID",     row.Cells["SlipID"].Value?.ToString()     ?? "" },
                 { "BillNumber", row.Cells["BillNumber"].Value?.ToString() ?? "" },
+                // Carry the slip's original print date onto the paper. A reprint is a copy of
+                // the same record, so every sheet must show the date the slip was FIRST printed
+                // — not the moment this particular sheet came out of the printer.
+                { "PrintedAt",  dataGridView1.Columns.Contains("PrintedAt")
+                                ? row.Cells["PrintedAt"].Value?.ToString() ?? "" : "" },
             };
             for (int i = 1; i <= 10; i++)
                 pkg.Add("Field" + i, row.Cells["Field" + i].Value?.ToString() ?? "");
@@ -513,18 +534,33 @@ namespace SlipManagement2
                 dlg.Text            = "Void Slip";
                 dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dlg.StartPosition   = FormStartPosition.CenterParent;
-                dlg.ClientSize      = new Size(380, 140);
+                dlg.ClientSize      = new Size(380, 162);
                 dlg.MaximizeBox     = false;
                 dlg.MinimizeBox     = false;
 
+                // Height 60 fits the 3-line prompt (two explicit \n lines at Arial 9pt ~18px each)
                 var lbl = new Label  { Text = prompt, Location = new Point(12, 12), AutoSize = false,
-                                       Size = new Size(356, 40), Font = new Font("Arial", 9) };
-                var txt = new TextBox { Location = new Point(12, 58), Size = new Size(356, 22),
+                                       Size = new Size(356, 60), Font = new Font("Arial", 9) };
+                var txt = new TextBox { Location = new Point(12, 80), Size = new Size(356, 22),
                                         Font = new Font("Arial", 9), MaxLength = 20 };
-                var btnOk     = new Button { Text = "OK",     DialogResult = DialogResult.OK,
-                                             Location = new Point(196, 100), Size = new Size(80, 28) };
+                var btnOk     = new Button { Text = "OK",     DialogResult = DialogResult.None,
+                                             Location = new Point(196, 116), Size = new Size(80, 28) };
                 var btnCancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel,
-                                             Location = new Point(288, 100), Size = new Size(80, 28) };
+                                             Location = new Point(288, 116), Size = new Size(80, 28) };
+
+                // OK validates inline — dialog stays open until a reason is given or user cancels
+                btnOk.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(txt.Text))
+                    {
+                        MessageBox.Show(
+                            "A void reason is required.\n\nPlease enter a reason before continuing, or click Cancel to abort.",
+                            "Reason Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        txt.Focus();
+                        return;
+                    }
+                    dlg.DialogResult = DialogResult.OK;
+                };
 
                 dlg.Controls.AddRange(new Control[] { lbl, txt, btnOk, btnCancel });
                 dlg.AcceptButton = btnOk;
@@ -560,7 +596,11 @@ namespace SlipManagement2
 
         private void ExportToXlsx(string filePath, string statusLabel)
         {
-            // Export exactly what the user sees: filtered rows and visible columns only
+            // Rows follow the current filter — the operator exports what they are looking at.
+            // Columns do NOT: every export has the same fixed column structure regardless of
+            // which fields are currently hidden, so exported files stay comparable to each
+            // other over time. A hidden field keeps its column and exports as blank rather
+            // than dropping out of the file.
             var dt = dataGridView1.DataSource as DataTable;
             if (dt == null || dt.Rows.Count == 0)
             {
@@ -568,21 +608,39 @@ namespace SlipManagement2
                 return;
             }
 
-            var visibleCols = new List<(string Key, string Header)>();
-            foreach (DataGridViewColumn col in dataGridView1.Columns)
+            var fieldCfgs = DatabaseManager.GetActiveFieldConfigurations();
+
+            // Key, Header, and whether the value is suppressed (hidden fields export blank)
+            var exportCols = new List<(string Key, string Header, bool Blank)>
             {
-                if (col.Visible)
-                    visibleCols.Add((col.Name, col.HeaderText));
+                ("SlipID",     "Slip ID",    false),
+                ("BillNumber", "Bill Number", false),
+                ("Status",     "Status",      false),
+                ("CreatedAt",  "Created At",  false),
+                ("PrintedAt",  "Printed At",  false),
+            };
+
+            for (int i = 1; i <= 10; i++)
+            {
+                string key    = "Field" + i;
+                bool   hidden = fieldCfgs.TryGetValue(key, out var cfg) && cfg.IsHidden;
+                string header = (cfg != null && !string.IsNullOrWhiteSpace(cfg.CustomName))
+                    ? cfg.CustomName.TrimEnd(':').Trim()
+                    : "Field " + i;
+                exportCols.Add((key, header, hidden));
             }
+
+            exportCols.Add(("VoidedAt",   "Voided At",   false));
+            exportCols.Add(("VoidReason", "Void Reason", false));
 
             using (var wb = new XLWorkbook())
             {
                 var ws = wb.Worksheets.Add($"{statusLabel} Slips");
 
-                for (int c = 1; c <= visibleCols.Count; c++)
+                for (int c = 1; c <= exportCols.Count; c++)
                 {
                     var cell = ws.Cell(1, c);
-                    cell.Value                      = visibleCols[c - 1].Header;
+                    cell.Value                      = exportCols[c - 1].Header;
                     cell.Style.Font.Bold            = true;
                     cell.Style.Fill.BackgroundColor = XLColor.LightGray;
                     cell.Style.Border.BottomBorder  = XLBorderStyleValues.Thin;
@@ -591,10 +649,13 @@ namespace SlipManagement2
                 for (int row = 0; row < dt.Rows.Count; row++)
                 {
                     DataRow dr = dt.Rows[row];
-                    for (int c = 1; c <= visibleCols.Count; c++)
+                    for (int c = 1; c <= exportCols.Count; c++)
                     {
-                        string key = visibleCols[c - 1].Key;
-                        ws.Cell(row + 2, c).Value = dt.Columns.Contains(key) ? dr[key]?.ToString() ?? "" : "";
+                        var col = exportCols[c - 1];
+                        string value = (col.Blank || !dt.Columns.Contains(col.Key))
+                            ? ""
+                            : dr[col.Key]?.ToString() ?? "";
+                        ws.Cell(row + 2, c).Value = value;
                     }
                 }
 
@@ -630,6 +691,15 @@ namespace SlipManagement2
 
             yPos = 8;
             TabPage tab2 = tabControl1.TabPages[1];
+
+            // SlipID — read-only reference, mirrors CreateSlip.cs txtSlipID.ReadOnly = true
+            var lblSlipIdEdit = new Label   { Text = GetDisplayName("SlipID") + ":", Location = new Point(10, yPos), AutoSize = true, Font = smallFont };
+            var txtSlipIdEdit = new TextBox { Location = new Point(120, yPos - 2), Size = new Size(200, 19), Font = smallFont, ReadOnly = true };
+            editTextBoxes.Add("SlipID", txtSlipIdEdit);
+            tab2.Controls.Add(lblSlipIdEdit);
+            tab2.Controls.Add(txtSlipIdEdit);
+            yPos += 22;
+
             foreach (var key in editKeys)
             {
                 var lblDesc = new Label  { Text = GetDisplayName(key) + ":", Location = new Point(10, yPos), AutoSize = true, Font = smallFont };

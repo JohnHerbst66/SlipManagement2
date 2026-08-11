@@ -63,13 +63,13 @@
             // 
             // dgvFieldSetup
             // 
-            this.dgvFieldSetup.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
+            this.dgvFieldSetup.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.dgvFieldSetup.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dgvFieldSetup.Location = new System.Drawing.Point(15, 6);
             this.dgvFieldSetup.Name = "dgvFieldSetup";
             this.dgvFieldSetup.RowHeadersWidth = 51;
             this.dgvFieldSetup.RowTemplate.Height = 24;
-            this.dgvFieldSetup.Size = new System.Drawing.Size(1123, 446);
+            this.dgvFieldSetup.Size = new System.Drawing.Size(1123, 400);
             this.dgvFieldSetup.TabIndex = 0;
             // 
             // tabSlipDesign
