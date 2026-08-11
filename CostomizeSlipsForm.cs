@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Windows.Forms;
 
@@ -11,6 +12,9 @@ namespace SlipManagement2
         private Panel pnlSlipFields;
         private Panel pnlRequiredFields;
         private bool _loadingChecklists = false;
+
+        // Labels as they were when the screen opened, so Save can report exactly what changed
+        private readonly Dictionary<string, string> _originalLabels = new Dictionary<string, string>();
 
         public CustomizeSlipsForm()
         {
@@ -71,6 +75,10 @@ namespace SlipManagement2
                 dgvFieldSetup.Resize += (s, e) => PositionTypeHereHint();
 
                 dgvFieldSetup.DataSource = DatabaseManager.GetFieldConfigAsDataTable();
+
+                _originalLabels.Clear();
+                foreach (DataRow row in ((DataTable)dgvFieldSetup.DataSource).Rows)
+                    _originalLabels[row["Database Slot"].ToString()] = row["Label Name"].ToString();
 
                 dgvFieldSetup.AutoSizeColumnsMode  = DataGridViewAutoSizeColumnsMode.Fill;
                 dgvFieldSetup.AllowUserToAddRows    = false;
@@ -195,10 +203,56 @@ namespace SlipManagement2
             }
         }
 
+        // Lists any label changes and spells out where they will show up, so a rename is never
+        // a silent surprise. Returns false if the operator backs out.
+        private bool ConfirmLabelChanges()
+        {
+            dgvFieldSetup.EndEdit();
+            var dt = (DataTable)dgvFieldSetup.DataSource;
+            if (dt == null) return true;
+
+            var renames = new List<string>();
+            foreach (DataRow row in dt.Rows)
+            {
+                string slot = row["Database Slot"].ToString();
+                string now  = row["Label Name"].ToString();
+                if (_originalLabels.TryGetValue(slot, out string was) && was != now)
+                {
+                    string wasShown = string.IsNullOrWhiteSpace(was) ? "(blank)" : "\"" + was + "\"";
+                    string nowShown = string.IsNullOrWhiteSpace(now) ? "(blank)" : "\"" + now + "\"";
+                    renames.Add("     " + slot + ":   " + wasShown + "   →   " + nowShown);
+                }
+            }
+            if (renames.Count == 0) return true;
+
+            string msg =
+                (renames.Count == 1 ? "You are renaming a field:" : "You are renaming " + renames.Count + " fields:")
+                + "\n\n" + string.Join("\n", renames) + "\n\n"
+                + "The new label will appear everywhere that field is shown:\n\n"
+                + "     •  the Create Slip data entry form\n"
+                + "     •  the Slip History grid, its filter row and the View and Edit tabs\n"
+                + "     •  the printed slip\n"
+                + "     •  the Excel export column headings\n"
+                + "     •  the Main Page tiles, if the field is shown there\n"
+                + "     •  the daily summary breakdown, if it is grouped by this field\n"
+                + "     •  the Manage Lookups list selector\n\n"
+                + "Slips already recorded are NOT changed. A slip stores the value that was "
+                + "entered, never the label, so past records keep reading exactly as they were "
+                + "printed.\n\n"
+                + "One thing that does NOT follow the new name: the dropdown suggestions for "
+                + "this field. Those still come from the list it was originally attached to.\n\n"
+                + "Continue?";
+
+            return MessageBox.Show(msg, "Renaming Fields",
+                MessageBoxButtons.OKCancel, MessageBoxIcon.Information) == DialogResult.OK;
+        }
+
         private void btnSave_Click(object sender, EventArgs e)
         {
             try
             {
+                if (!ConfirmLabelChanges()) return;
+
                 DatabaseManager.SaveFieldConfigFromDataTable((DataTable)dgvFieldSetup.DataSource);
                 DatabaseManager.SaveGlobalSetting("HeaderTitle", txtCompanyHeader.Text.Trim());
                 DatabaseManager.SaveGlobalSetting("LogoPath",    txtLogoPath.Text.Trim());

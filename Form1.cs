@@ -365,7 +365,16 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
         private void btnCustomizeSlips_Click(object sender, EventArgs e)
         {
             CustomizeSlipsForm options = new CustomizeSlipsForm();
-            options.ShowDialog();
+
+            // Field labels feed the tile captions, so a rename has to redraw the dashboard.
+            // Without this the tiles keep their old headings until something else happens to
+            // rebuild them, which made a saved rename look like it had not taken effect.
+            if (options.ShowDialog() == DialogResult.OK)
+            {
+                DatabaseManager.LoadUnprintedSlipsToDashboard(this.flpSlips);
+                UpdateEmptyState();
+                RefreshSummary();
+            }
         }
     }
 }
