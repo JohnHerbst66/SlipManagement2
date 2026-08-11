@@ -255,6 +255,21 @@ namespace SlipManagement2
             if (!hasCopiesPerPage)
                 ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN CopiesPerPage INTEGER NOT NULL DEFAULT 1;");
 
+            // DEF-021: the three columns above superseded GlobalSettings rows of the same name,
+            // but the 3 July migration left those rows in place. Nothing has read them since, so
+            // there is no runtime symptom — the harm is that they still hold their pre-refactor
+            // values and read as authoritative. A database created on 7 August reported
+            // SlipFontScale 2.75 while the active profile was printing at 1.95, and offsets of
+            // 0 and -1.5 against a live -1 and 0. Removing them here, alongside the columns that
+            // replaced them, is what the original migration should have done.
+            //
+            // The three keys are named rather than swept by a whitelist of live settings: an
+            // unrecognised key is far likelier to be one added after this code was written than
+            // one this refactor stranded, and deleting it would be the worse mistake.
+            ExecNQ(conn, @"
+                DELETE FROM GlobalSettings
+                WHERE SettingKey IN ('SlipFontScale', 'SlipOffsetXMm', 'SlipOffsetYMm');");
+
             // 3-copies layout has been removed (asymmetric 2×2 with blank cell). Migrate to 2.
             ExecNQ(conn, "UPDATE PrinterProfiles SET CopiesPerPage = 2 WHERE CopiesPerPage = 3;");
         }
