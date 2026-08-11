@@ -642,8 +642,6 @@ namespace SlipManagement2
                         {
                             int    slipId  = Convert.ToInt32(reader["SlipID"]);
                             string billNum = reader["BillNumber"].ToString();
-                            string f1      = reader["Field1"]?.ToString() ?? "";
-                            string f7      = reader["Field7"]?.ToString() ?? "";
 
                             var data = new Dictionary<string, string>
                             {
@@ -653,8 +651,7 @@ namespace SlipManagement2
                             for (int i = 1; i <= 10; i++)
                                 data["Field" + i] = reader["Field" + i]?.ToString() ?? "";
 
-                            Button tile = BuildTile(slipId, f1, f7, data);
-                            panel.Controls.Add(tile);
+                            panel.Controls.Add(BuildTile(slipId, data));
                         }
                     }
                 }
@@ -665,18 +662,75 @@ namespace SlipManagement2
             }
         }
 
-        private static Button BuildTile(int slipId, string f1, string f7, Dictionary<string, string> data)
-        {
-            string reg  = string.IsNullOrWhiteSpace(f1) ? "No Reg" : f1;
-            string tons = string.IsNullOrWhiteSpace(f7) ? "0" : f7;
+        // ===================================================================
+        // MAIN PAGE TILE DISPLAY
+        // ===================================================================
 
+        // A tile shows the slip number plus up to this many operator-chosen fields.
+        public const int MaxTileFields = 4;
+
+        // The field slots shown on a tile, in the order the operator picked them.
+        public static List<string> GetTileFieldSlots()
+        {
+            var slots = new List<string>();
+            foreach (string part in GetGlobalSetting("TileFields", "Field1,Field7").Split(','))
+            {
+                string s = part.Trim();
+                if (s.Length == 0 || slots.Contains(s)) continue;
+                slots.Add(s);
+                if (slots.Count >= MaxTileFields) break;
+            }
+            if (slots.Count == 0) slots.Add("Field1");
+            return slots;
+        }
+
+        public static void SaveTileFieldSlots(IEnumerable<string> slots)
+        {
+            var list = new List<string>();
+            foreach (string s in slots)
+            {
+                if (string.IsNullOrWhiteSpace(s) || list.Contains(s.Trim())) continue;
+                list.Add(s.Trim());
+                if (list.Count >= MaxTileFields) break;
+            }
+            SaveGlobalSetting("TileFields", string.Join(",", list));
+        }
+
+        // Builds a tile's caption: the slip number, then one "Label: value" line per configured
+        // field, using whatever the field is currently called. Both the dashboard loader and
+        // CreateSlip call this, so a tile never renders differently depending on which code
+        // path produced it.
+        public static string BuildTileText(int slipId, Dictionary<string, string> data)
+        {
+            var cfgs = GetActiveFieldConfigurations();
+            var sb   = new System.Text.StringBuilder();
+            sb.Append("Slip: ").Append(slipId);
+
+            foreach (string slot in GetTileFieldSlots())
+            {
+                if (!cfgs.TryGetValue(slot, out var cfg)) continue;
+
+                string label = string.IsNullOrWhiteSpace(cfg.CustomName)
+                    ? "Field " + slot.Replace("Field", "")
+                    : cfg.CustomName.TrimEnd(':').Trim();
+
+                string value = (data.TryGetValue(slot, out string v) && !string.IsNullOrWhiteSpace(v))
+                    ? v : "-";
+
+                sb.AppendLine().Append(label).Append(": ").Append(value);
+            }
+            return sb.ToString();
+        }
+
+        private static Button BuildTile(int slipId, Dictionary<string, string> data)
+        {
             var tile = new Button
             {
-                Size      = new Size(200, 110),
+                Size      = new Size(215, 132),
                 BackColor = Color.LightYellow,
                 FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Arial", 10, FontStyle.Bold),
-                Text      = $"Reg: {reg}\nSlip: {slipId}\nTons: {tons}",
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                Text      = BuildTileText(slipId, data),
                 Tag       = data,
             };
 

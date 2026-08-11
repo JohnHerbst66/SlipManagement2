@@ -136,7 +136,25 @@ namespace SlipManagement2
             btnTest.Font   = new Font("Arial", 10, FontStyle.Bold);
             btnTest.Click += BtnTest_Click;
             left.Controls.Add(btnTest);
-            y += 46;
+            y += 44;
+
+            var btnGrid = MakeBtn("Print Measuring Grid", Color.LightSkyBlue, new Point(14, y), new Size(272, 34));
+            btnGrid.Font   = new Font("Arial", 9, FontStyle.Bold);
+            btnGrid.Click += BtnPrintGrid_Click;
+            left.Controls.Add(btnGrid);
+            y += 38;
+
+            left.Controls.Add(new Label
+            {
+                Text      = "Prints a ruled sheet at these dimensions. Measure where the "
+                          + "lines actually land with a ruler, then correct the margins "
+                          + "and offsets above from real numbers.",
+                Location  = new Point(14, y),
+                Size      = new Size(272, 46),
+                Font      = new Font("Arial", 7.5f, FontStyle.Italic),
+                ForeColor = Color.DimGray,
+            });
+            y += 50;
 
             var btnSave   = MakeBtn("Save Settings", Color.PaleGreen,  new Point(14,  y), new Size(130, 32));
             var btnCancel = MakeBtn("Cancel",         Color.LightCoral, new Point(156, y), new Size(130, 32));
@@ -446,6 +464,44 @@ namespace SlipManagement2
             {
                 MessageBox.Show("Print failed:\n" + ex.Message, "Print Error",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // ===================================================================
+        // PRINT MEASURING GRID
+        // ===================================================================
+        // Prints the ruled calibration sheet rather than a slip: a 10mm grid, 5mm ticks down
+        // the top and left edges, the page boundary, the margin boundary in red, and crosshairs
+        // at the four margin corners and the centre.
+        //
+        // Unlike the slip renderer, this one deliberately draws from ev.PageBounds and
+        // ev.MarginBounds — the printer driver's own idea of the page. That is the whole point:
+        // comparing where those lines physically land against a ruler is what reveals the
+        // mechanical offset the driver does not report.
+        private void BtnPrintGrid_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string printerName  = DatabaseManager.GetGlobalSetting("SelectedPrinter", "EPSON LX-350");
+                string paperProfile = DatabaseManager.GetGlobalSetting("PaperSizeProfile", PaperSizeHelper.DefaultProfile);
+                string orientStr    = DatabaseManager.GetGlobalSetting("PrintOrientation", "Portrait");
+                bool   isLandscape  = orientStr.Equals("Landscape", StringComparison.OrdinalIgnoreCase);
+
+                // Margins cross into System.Drawing.Printing as hundredths of an inch
+                int Units(decimal mm) => (int)((double)mm / 25.4 * 100);
+
+                var pd = SlipPrintEngine.BuildCalibrationOnlyDocument(
+                    printerName, paperProfile,
+                    (double)_numPaperW.Value, (double)_numPaperH.Value, isLandscape,
+                    Units(_numLeft.Value), Units(_numRight.Value),
+                    Units(_numTop.Value),  Units(_numBottom.Value));
+
+                pd.Print();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not print the measuring grid:\n\n" + ex.Message,
+                    "Print Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

@@ -427,9 +427,17 @@ namespace SlipManagement2
 
         private void UpdateOrCreateTile(string[] fields)
         {
-            string regDisplay  = fields[0];
-            string tonsDisplay = string.IsNullOrWhiteSpace(fields[6]) ? "0" : fields[6];
-            string tileText    = $"Reg: {regDisplay}\nSlip: {ExistingSlipId}\nTons: {tonsDisplay}";
+            var data = new Dictionary<string, string>
+            {
+                { "SlipID",     ExistingSlipId.ToString() },
+                { "BillNumber", txtBilNumber.Text },
+            };
+            for (int i = 1; i <= 10; i++)
+                data.Add("Field" + i, fields[i - 1]);
+
+            // Same renderer the dashboard uses, so a tile created here and one loaded from the
+            // database always look identical and both honour the operator's Tile Display choice.
+            string tileText = DatabaseManager.BuildTileText(ExistingSlipId, data);
 
             if (this.Tag is Button existingCard)
             {
@@ -445,22 +453,14 @@ namespace SlipManagement2
 
             Button slipCard = new Button
             {
-                Size      = new Size(200, 110),
+                Size      = new Size(215, 132),
                 BackColor = Color.LightYellow,
                 FlatStyle = FlatStyle.Flat,
-                Font      = new Font("Arial", 10, FontStyle.Bold),
+                Font      = new Font("Arial", 9, FontStyle.Bold),
                 Text      = tileText,
             };
 
-            var memoryCache = new Dictionary<string, string>
-            {
-                { "SlipID",     ExistingSlipId.ToString() },
-                { "BillNumber", txtBilNumber.Text },
-            };
-            for (int i = 1; i <= 10; i++)
-                memoryCache.Add("Field" + i, fields[i - 1]);
-
-            slipCard.Tag    = memoryCache;
+            slipCard.Tag    = data;
             slipCard.Click += SlipCard_Click;
 
             Main mainPage = (Main)Application.OpenForms["Main"];

@@ -129,6 +129,9 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SlipPrintEngine.cs" />
+    <Compile Include="TileDisplayForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SlipsHistoryForm.cs">
       <SubType>Form</SubType>
     </Compile>

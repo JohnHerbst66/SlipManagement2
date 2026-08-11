@@ -24,6 +24,7 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             SetupEmptyState();
             SetupManageLookupsButton();
             SetupBackupButton();
+            SetupTileDisplayButton();
             SetupSummaryPanel();
 
             DatabaseManager.LoadUnprintedSlipsToDashboard(this.flpSlips);
@@ -110,6 +111,33 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
                 Anchor    = AnchorStyles.Top | AnchorStyles.Right,
             };
             btn.Click += (s, e) => new LookupManagerForm().ShowDialog(this);
+            this.Controls.Add(btn);
+        }
+
+        private void SetupTileDisplayButton()
+        {
+            var btn = new Button
+            {
+                Text      = "Tile Display",
+                Size      = btnCustomizeSlips.Size,
+                Location  = new Point(btnCustomizeSlips.Left - btnCustomizeSlips.Width * 3 - 18, btnCustomizeSlips.Top),
+                BackColor = Color.Gainsboro,
+                FlatStyle = FlatStyle.Flat,
+                UseVisualStyleBackColor = false,
+                Anchor    = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            btn.Click += (s, e) =>
+            {
+                using (var dlg = new TileDisplayForm())
+                {
+                    // Redraw the tiles immediately so the change is visible without a restart
+                    if (dlg.ShowDialog(this) == DialogResult.OK)
+                    {
+                        DatabaseManager.LoadUnprintedSlipsToDashboard(this.flpSlips);
+                        UpdateEmptyState();
+                    }
+                }
+            };
             this.Controls.Add(btn);
         }
 
