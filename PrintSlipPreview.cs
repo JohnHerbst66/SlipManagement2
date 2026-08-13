@@ -199,7 +199,14 @@ namespace SlipManagement2
         {
             try
             {
-                SlipPrintEngine.BuildPrintDocument(_slipData).Print();
+                var pd = SlipPrintEngine.BuildPrintDocument(_slipData);
+
+                // Backing out of the Save dialog when printing to PDF must not count as a
+                // print. Otherwise the slip is marked Printed with no document to show for
+                // it — the one thing a proof-of-record system cannot be allowed to do.
+                if (!SlipPrintEngine.TryPrepareFileOutput(pd, this)) return;
+
+                pd.Print();
                 DialogResult = System.Windows.Forms.DialogResult.OK;
                 Close();
             }

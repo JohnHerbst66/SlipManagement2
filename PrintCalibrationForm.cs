@@ -18,6 +18,7 @@ namespace SlipManagement2
         private NumericUpDown _numFontScale;
         private NumericUpDown _numOffsetX, _numOffsetY;
         private ComboBox      _cmbCopiesPerPage;
+        private ComboBox      _cmbLayout;
         private Label         _lblCopiesHint;
 
         // preview
@@ -118,6 +119,28 @@ namespace SlipManagement2
             _cmbCopiesPerPage.SelectedIndex = 0;
             _cmbCopiesPerPage.SelectedIndexChanged += (s, e) => { if (!_suppressRebuild) RebuildBitmap(); };
             left.Controls.Add(_cmbCopiesPerPage);
+            y += 28;
+
+            // Which way the copies sit, and therefore which way the page gets cut. The engine
+            // used to hardcode side-by-side, which is wrong for anyone tearing across the page.
+            left.Controls.Add(new Label
+            {
+                Text     = "Arrangement:",
+                Location = new Point(14, y + 3),
+                AutoSize = true,
+                Font     = new Font("Arial", 9),
+            });
+            _cmbLayout = new ComboBox
+            {
+                Location      = new Point(150, y),
+                Size          = new Size(136, 22),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font          = new Font("Arial", 9),
+            };
+            _cmbLayout.Items.AddRange(new object[] { "Side by side", "Stacked", "Grid (2 x 2)" });
+            _cmbLayout.SelectedIndex = 0;
+            _cmbLayout.SelectedIndexChanged += (s, e) => { if (!_suppressRebuild) RebuildBitmap(); };
+            left.Controls.Add(_cmbLayout);
             y += 28;
             _lblCopiesHint = new Label
             {
@@ -258,6 +281,7 @@ namespace SlipManagement2
                     Set(_numOffsetX,   (decimal)target.SlipOffsetXMm);
                     Set(_numOffsetY,   (decimal)target.SlipOffsetYMm);
                     SetCopies(target.CopiesPerPage);
+                    SetLayout(target.MultiSlipLayout);
                 }
             }
             finally { /* _suppressRebuild is reset to false by the constructor */ }
@@ -276,6 +300,27 @@ namespace SlipManagement2
 
         private int GetCopies() => _cmbCopiesPerPage.SelectedItem is int v ? v : 1;
 
+        // The combo shows plain English; the profile stores the engine's constant.
+        private string GetLayout()
+        {
+            switch (_cmbLayout?.SelectedItem as string)
+            {
+                case "Stacked":      return SlipPrintEngine.LayoutRows;
+                case "Grid (2 x 2)": return SlipPrintEngine.LayoutGrid;
+                default:             return SlipPrintEngine.LayoutColumns;
+            }
+        }
+
+        private void SetLayout(string layout)
+        {
+            string shown =
+                string.Equals(layout, SlipPrintEngine.LayoutRows, StringComparison.OrdinalIgnoreCase) ? "Stacked" :
+                string.Equals(layout, SlipPrintEngine.LayoutGrid, StringComparison.OrdinalIgnoreCase) ? "Grid (2 x 2)" :
+                "Side by side";
+            int idx = _cmbLayout.Items.IndexOf(shown);
+            _cmbLayout.SelectedIndex = idx >= 0 ? idx : 0;
+        }
+
         // ===================================================================
         // COPIES ENABLED STATE
         // ===================================================================
@@ -292,6 +337,40 @@ namespace SlipManagement2
                 _suppressRebuild = true;
                 SetCopies(1);
                 _suppressRebuild = false;
+            }
+
+            // Arrangement only means anything with more than one copy, and a 2x2 grid needs
+            // four of them — offering Grid for two would silently behave as side by side.
+            //
+            // Adding or removing the Grid entry can change the selection, which fires the
+            // combo's handler, which calls RebuildBitmap, which calls this method again. The
+            // rebuild is suppressed across the mutation to keep that loop from starting; the
+            // caller's own suppression is preserved rather than cleared.
+            if (_cmbLayout != null)
+            {
+                _cmbLayout.Enabled = canMulti && GetCopies() > 1;
+
+                bool wasSuppressed = _suppressRebuild;
+                _suppressRebuild = true;
+                try
+                {
+                    bool gridListed  = _cmbLayout.Items.Contains("Grid (2 x 2)");
+                    bool gridApplies = GetCopies() == 4;
+
+                    if (gridApplies && !gridListed)
+                    {
+                        _cmbLayout.Items.Add("Grid (2 x 2)");
+                    }
+                    else if (!gridApplies && gridListed)
+                    {
+                        bool wasGrid = (_cmbLayout.SelectedItem as string) == "Grid (2 x 2)";
+                        _cmbLayout.Items.Remove("Grid (2 x 2)");
+                        if (wasGrid) _cmbLayout.SelectedIndex = 0;
+                    }
+                    if (_cmbLayout.SelectedIndex < 0 && _cmbLayout.Items.Count > 0)
+                        _cmbLayout.SelectedIndex = 0;
+                }
+                finally { _suppressRebuild = wasSuppressed; }
             }
         }
 
@@ -350,41 +429,28 @@ namespace SlipManagement2
             // LAYER 3 — slip bitmap in grid layout matching RenderSlipForPreview
             if (_slipBitmap != null && mW > 0 && mH > 0)
             {
-                int copies = GetCopies();
-                float offX   = (float)_numOffsetX.Value * fitScale;
-                float offY   = (float)_numOffsetY.Value * fitScale;
-                float hw     = mW / 2f;
-                float hh     = mH / 2f;
+                float offX = (float)_numOffsetX.Value * fitScale;
+                float offY = (float)_numOffsetY.Value * fitScale;
+
+                // Same rule the printer uses, so the preview can never show a different
+                // arrangement from the one that comes out of the machine.
+                SlipPrintEngine.GetTiling(GetCopies(), GetLayout(), out int cols, out int rows);
+                float cw = mW / cols;
+                float ch = mH / rows;
 
                 g.SetClip(pageRect);
 
-                if (copies == 1)
-                {
-                    g.DrawImage(_slipBitmap, new RectangleF(mX + offX, mY + offY, mW, mH));
-                }
-                else if (copies == 2)
-                {
-                    // Left and right columns, full height
-                    g.DrawImage(_slipBitmap, new RectangleF(mX + offX,        mY + offY, hw, mH));
-                    g.DrawImage(_slipBitmap, new RectangleF(mX + offX + hw,   mY + offY, hw, mH));
-                    using (var sep = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
-                        g.DrawLine(sep, mX + hw, mY, mX + hw, mY + mH);
-                }
-                else   // 4 copies — full 2×2 grid
-                {
-                    float[] xs = { mX + offX, mX + offX + hw };
-                    float[] ys = { mY + offY, mY + offY + hh };
+                for (int row = 0; row < rows; row++)
+                    for (int col = 0; col < cols; col++)
+                        g.DrawImage(_slipBitmap,
+                            new RectangleF(mX + offX + col * cw, mY + offY + row * ch, cw, ch));
 
-                    g.DrawImage(_slipBitmap, new RectangleF(xs[0], ys[0], hw, hh));
-                    g.DrawImage(_slipBitmap, new RectangleF(xs[1], ys[0], hw, hh));
-                    g.DrawImage(_slipBitmap, new RectangleF(xs[0], ys[1], hw, hh));
-                    g.DrawImage(_slipBitmap, new RectangleF(xs[1], ys[1], hw, hh));
-
-                    using (var sep = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
-                    {
-                        g.DrawLine(sep, mX + hw, mY, mX + hw, mY + mH);
-                        g.DrawLine(sep, mX, mY + hh, mX + mW, mY + hh);
-                    }
+                using (var sep = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
+                {
+                    for (int col = 1; col < cols; col++)
+                        g.DrawLine(sep, mX + col * cw, mY, mX + col * cw, mY + mH);
+                    for (int row = 1; row < rows; row++)
+                        g.DrawLine(sep, mX, mY + row * ch, mX + mW, mY + row * ch);
                 }
 
                 g.ResetClip();
@@ -400,17 +466,17 @@ namespace SlipManagement2
 
             UpdateCopiesEnabled();
 
-            int    copies     = GetCopies();
             double printableW = (double)(_numPaperW.Value - _numLeft.Value - _numRight.Value);
             double printableH = (double)(_numPaperH.Value - _numTop.Value  - _numBottom.Value);
             float  fontScale  = (float)_numFontScale.Value;
 
-            // Cell size follows the same grid logic as RenderSlipForPreview:
-            //   1 copy  → full printable area
-            //   2 copies → half width, full height
-            //   4 copies → half width, half height
-            double cellW = copies == 1 ? printableW : printableW / 2.0;
-            double cellH = copies == 4 ? printableH / 2.0 : printableH;
+            // Cell size comes from the same tiling rule the renderer uses, so the bitmap is
+            // built at the proportions it will actually be drawn at — stacked copies are wide
+            // and short, side-by-side ones tall and narrow, and the text has to be laid out
+            // for the right shape rather than squeezed into it afterwards.
+            SlipPrintEngine.GetTiling(GetCopies(), GetLayout(), out int cols, out int rows);
+            double cellW = printableW / cols;
+            double cellH = printableH / rows;
 
             _slipBitmap?.Dispose();
             _slipBitmap = null;
@@ -456,7 +522,11 @@ namespace SlipManagement2
                     (float)_numFontScale.Value,
                     (float)_numOffsetX.Value,
                     (float)_numOffsetY.Value,
-                    GetCopies());
+                    GetCopies(),
+                    GetLayout());
+
+                pd.DocumentName = "Calibration test page";
+                if (!SlipPrintEngine.TryPrepareFileOutput(pd, this)) return;
 
                 pd.Print();
             }
@@ -495,6 +565,9 @@ namespace SlipManagement2
                     (double)_numPaperW.Value, (double)_numPaperH.Value, isLandscape,
                     Units(_numLeft.Value), Units(_numRight.Value),
                     Units(_numTop.Value),  Units(_numBottom.Value));
+
+                pd.DocumentName = "Measuring grid";
+                if (!SlipPrintEngine.TryPrepareFileOutput(pd, this)) return;
 
                 pd.Print();
             }
@@ -538,7 +611,8 @@ namespace SlipManagement2
                         (float)_numFontScale.Value,
                         (float)_numOffsetX.Value,
                         (float)_numOffsetY.Value,
-                        GetCopies());
+                        GetCopies(),
+                        GetLayout());
                 }
 
                 string savedTo = target?.ProfileName ?? "(no active profile)";

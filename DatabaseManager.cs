@@ -99,6 +99,19 @@ namespace SlipManagement2
                             UNIQUE (ListID, Value)
                         );");
 
+                    // The company logo lives in the database rather than as a path to a file on
+                    // disk. A path only means something on the machine that chose it, so it never
+                    // survives being handed to a customer, and it breaks the moment the picture is
+                    // moved or deleted. Held here it travels with the database, every backup
+                    // captures it, and nothing outside the file can invalidate it. One row only.
+                    ExecNQ(conn, @"
+                        CREATE TABLE IF NOT EXISTS CompanyLogo (
+                            LogoID     INTEGER PRIMARY KEY CHECK (LogoID = 1),
+                            ImageBytes BLOB NOT NULL,
+                            FileName   TEXT NOT NULL DEFAULT '',
+                            SavedAt    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+                        );");
+
                     MigrateSchemaIfNeeded(conn);
                     SeedFieldConfigIfEmpty(conn);
                     SeedGlobalSettingsIfEmpty(conn);
@@ -208,18 +221,20 @@ namespace SlipManagement2
             bool hasSlipOffsetXMm = false;
             bool hasSlipOffsetYMm = false;
             bool hasCopiesPerPage = false;
+            bool hasMultiSlipLayout = false;
             using (var cmd = new SQLiteCommand("PRAGMA table_info(PrinterProfiles);", conn))
             using (var r = cmd.ExecuteReader())
                 while (r.Read())
                 {
                     string col = r["name"].ToString();
-                    if (col.Equals("ProfileName",   StringComparison.OrdinalIgnoreCase)) hasProfileName   = true;
-                    if (col.Equals("Orientation",   StringComparison.OrdinalIgnoreCase)) hasOrientation   = true;
-                    if (col.Equals("SlipLengthIn",  StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn  = true;
-                    if (col.Equals("SlipFontScale", StringComparison.OrdinalIgnoreCase)) hasSlipFontScale = true;
-                    if (col.Equals("SlipOffsetXMm", StringComparison.OrdinalIgnoreCase)) hasSlipOffsetXMm = true;
-                    if (col.Equals("SlipOffsetYMm", StringComparison.OrdinalIgnoreCase)) hasSlipOffsetYMm = true;
-                    if (col.Equals("CopiesPerPage", StringComparison.OrdinalIgnoreCase)) hasCopiesPerPage = true;
+                    if (col.Equals("ProfileName",     StringComparison.OrdinalIgnoreCase)) hasProfileName     = true;
+                    if (col.Equals("Orientation",     StringComparison.OrdinalIgnoreCase)) hasOrientation     = true;
+                    if (col.Equals("SlipLengthIn",    StringComparison.OrdinalIgnoreCase)) hasSlipLengthIn    = true;
+                    if (col.Equals("SlipFontScale",   StringComparison.OrdinalIgnoreCase)) hasSlipFontScale   = true;
+                    if (col.Equals("SlipOffsetXMm",   StringComparison.OrdinalIgnoreCase)) hasSlipOffsetXMm   = true;
+                    if (col.Equals("SlipOffsetYMm",   StringComparison.OrdinalIgnoreCase)) hasSlipOffsetYMm   = true;
+                    if (col.Equals("CopiesPerPage",   StringComparison.OrdinalIgnoreCase)) hasCopiesPerPage   = true;
+                    if (col.Equals("MultiSlipLayout", StringComparison.OrdinalIgnoreCase)) hasMultiSlipLayout = true;
                 }
 
             if (!hasProfileName)
@@ -255,6 +270,11 @@ namespace SlipManagement2
             if (!hasCopiesPerPage)
                 ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN CopiesPerPage INTEGER NOT NULL DEFAULT 1;");
 
+            // How multiple copies sit on the page. 'Columns' matches what the engine did before
+            // this column existed, so an upgraded database keeps printing exactly as it did.
+            if (!hasMultiSlipLayout)
+                ExecNQ(conn, "ALTER TABLE PrinterProfiles ADD COLUMN MultiSlipLayout TEXT NOT NULL DEFAULT 'Columns';");
+
             // DEF-021: the three columns above superseded GlobalSettings rows of the same name,
             // but the 3 July migration left those rows in place. Nothing has read them since, so
             // there is no runtime symptom — the harm is that they still hold their pre-refactor
@@ -272,6 +292,43 @@ namespace SlipManagement2
 
             // 3-copies layout has been removed (asymmetric 2×2 with blank cell). Migrate to 2.
             ExecNQ(conn, "UPDATE PrinterProfiles SET CopiesPerPage = 2 WHERE CopiesPerPage = 3;");
+
+            // LogoPath held an absolute path to a picture elsewhere on the machine; the image now
+            // lives in CompanyLogo. Read the old path once and, if it still resolves, pull the
+            // picture in so a configured logo survives the upgrade. Then drop the key either way
+            // rather than leave it behind reading as though it still meant something (DEF-021).
+            string oldLogoPath = null;
+            using (var cmd = new SQLiteCommand(
+                "SELECT SettingValue FROM GlobalSettings WHERE SettingKey = 'LogoPath';", conn))
+            {
+                object v = cmd.ExecuteScalar();
+                if (v != null && v != DBNull.Value) oldLogoPath = v.ToString();
+            }
+
+            if (oldLogoPath != null)
+            {
+                bool haveLogo;
+                using (var cmd = new SQLiteCommand("SELECT COUNT(*) FROM CompanyLogo;", conn))
+                    haveLogo = Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+
+                if (!haveLogo && oldLogoPath.Length > 0 && File.Exists(oldLogoPath))
+                {
+                    try
+                    {
+                        byte[] bytes = File.ReadAllBytes(oldLogoPath);
+                        using (var cmd = new SQLiteCommand(
+                            "INSERT INTO CompanyLogo (LogoID, ImageBytes, FileName) VALUES (1, @B, @N);", conn))
+                        {
+                            cmd.Parameters.Add("@B", DbType.Binary).Value = bytes;
+                            cmd.Parameters.AddWithValue("@N", Path.GetFileName(oldLogoPath));
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                    catch { }   // unreadable file: nothing to carry over, the operator re-picks it
+                }
+
+                ExecNQ(conn, "DELETE FROM GlobalSettings WHERE SettingKey = 'LogoPath';");
+            }
         }
 
         private static void SeedFieldConfigIfEmpty(SQLiteConnection conn)
@@ -324,7 +381,8 @@ namespace SlipManagement2
             var defaults = new[]
             {
                 ("HeaderTitle",       "UITVAL GRONDE PTY (LTD)"),
-                ("LogoPath",          ""),
+                ("LogoPlacement",     "Above"),
+                ("LogoHeightMm",      "15"),
                 ("SelectedPrinter",   "EPSON LX-350"),
                 ("PaperSizeProfile",  "Small240x102"),
                 ("PrintOrientation",  "Portrait"),
@@ -355,10 +413,11 @@ namespace SlipManagement2
                     (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
                      MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
                      NumCopies, Orientation, SlipLengthIn, IsActive,
-                     SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage)
+                     SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage,
+                     MultiSlipLayout)
                 VALUES ('Default', 'EPSON LX-350', 'Small240x102', 240, 139.7,
                         10, 10, 10, 10, 1, 'Portrait', 5.5, 1,
-                        1.0, 0.0, 0.0, 1);");
+                        1.0, 0.0, 0.0, 1, 'Columns');");
         }
 
         // ===================================================================
@@ -790,6 +849,7 @@ namespace SlipManagement2
             public float  SlipOffsetXMm  { get; set; } = 0f;
             public float  SlipOffsetYMm  { get; set; } = 0f;
             public int    CopiesPerPage  { get; set; } = 1;
+            public string MultiSlipLayout { get; set; } = SlipPrintEngine.LayoutColumns;
         }
 
         // Returns the active PrinterProfile row, or sensible defaults if none exists yet.
@@ -801,7 +861,8 @@ namespace SlipManagement2
                 {
                     conn.Open();
                     const string sql = @"SELECT MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
-                                                NumCopies, SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage
+                                                NumCopies, SlipFontScale, SlipOffsetXMm, SlipOffsetYMm,
+                                                CopiesPerPage, MultiSlipLayout
                                          FROM PrinterProfiles WHERE IsActive=1 LIMIT 1;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     using (var r = cmd.ExecuteReader())
@@ -819,6 +880,9 @@ namespace SlipManagement2
                                 SlipOffsetXMm  = Convert.ToSingle(r["SlipOffsetXMm"]),
                                 SlipOffsetYMm  = Convert.ToSingle(r["SlipOffsetYMm"]),
                                 CopiesPerPage  = Convert.ToInt32(r["CopiesPerPage"]),
+                                MultiSlipLayout = r["MultiSlipLayout"] == DBNull.Value
+                                    ? SlipPrintEngine.LayoutColumns
+                                    : r["MultiSlipLayout"].ToString(),
                             };
                         }
                     }
@@ -849,6 +913,7 @@ namespace SlipManagement2
             public float  SlipOffsetXMm    { get; set; } = 0f;
             public float  SlipOffsetYMm    { get; set; } = 0f;
             public int    CopiesPerPage    { get; set; } = 1;
+            public string MultiSlipLayout  { get; set; } = SlipPrintEngine.LayoutColumns;
         }
 
         private static PrinterProfileData ReadProfileRow(System.Data.SQLite.SQLiteDataReader r)
@@ -873,6 +938,9 @@ namespace SlipManagement2
                 SlipOffsetXMm    = Convert.ToSingle(r["SlipOffsetXMm"]),
                 SlipOffsetYMm    = Convert.ToSingle(r["SlipOffsetYMm"]),
                 CopiesPerPage    = Convert.ToInt32(r["CopiesPerPage"]),
+                MultiSlipLayout  = r["MultiSlipLayout"] == DBNull.Value
+                    ? SlipPrintEngine.LayoutColumns
+                    : r["MultiSlipLayout"].ToString(),
             };
         }
 
@@ -935,9 +1003,10 @@ namespace SlipManagement2
                             (ProfileName, PrinterName, Mode, WidthMM, HeightMM,
                              MarginTopMM, MarginLeftMM, MarginRightMM, MarginBottomMM,
                              NumCopies, Orientation, SlipLengthIn, IsActive,
-                             SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage)
+                             SlipFontScale, SlipOffsetXMm, SlipOffsetYMm, CopiesPerPage,
+                             MultiSlipLayout)
                         VALUES (@PN, @P, @M, @W, @H, @T, @L, @R, @B, @C, @O, @SL, 1,
-                                1.0, 0.0, 0.0, 1)
+                                1.0, 0.0, 0.0, 1, 'Columns')
                         ON CONFLICT(ProfileName) DO UPDATE SET
                             PrinterName    = excluded.PrinterName,
                             Mode           = excluded.Mode,
@@ -975,7 +1044,8 @@ namespace SlipManagement2
 
         // Writes only the calibration columns for an existing profile row.
         public static void SaveCalibrationToProfile(string profileName,
-            float slipFontScale, float slipOffsetXMm, float slipOffsetYMm, int copiesPerPage)
+            float slipFontScale, float slipOffsetXMm, float slipOffsetYMm, int copiesPerPage,
+            string multiSlipLayout = SlipPrintEngine.LayoutColumns)
         {
             try
             {
@@ -987,7 +1057,8 @@ namespace SlipManagement2
                             SlipFontScale = @FS,
                             SlipOffsetXMm = @OX,
                             SlipOffsetYMm = @OY,
-                            CopiesPerPage = @CP
+                            CopiesPerPage = @CP,
+                            MultiSlipLayout = @ML
                         WHERE ProfileName = @PN;";
                     using (var cmd = new SQLiteCommand(sql, conn))
                     {
@@ -996,6 +1067,7 @@ namespace SlipManagement2
                         cmd.Parameters.AddWithValue("@OX", slipOffsetXMm);
                         cmd.Parameters.AddWithValue("@OY", slipOffsetYMm);
                         cmd.Parameters.AddWithValue("@CP", copiesPerPage);
+                        cmd.Parameters.AddWithValue("@ML", multiSlipLayout ?? SlipPrintEngine.LayoutColumns);
                         cmd.ExecuteNonQuery();
                     }
                 }
@@ -1281,6 +1353,102 @@ namespace SlipManagement2
             }
             catch { }
             return lists;
+        }
+
+        // ===================================================================
+        // COMPANY LOGO
+        // ===================================================================
+        // The picture printed above the company name. Held as bytes in the database so it goes
+        // wherever the database goes and no file on disk can invalidate it.
+
+        // The renderer asks for this once per printed copy, so a 2x2 sheet would otherwise be
+        // four reads of the same blob. Cached here and dropped whenever the logo is written.
+        private static byte[] _logoCache;
+        private static bool   _logoCacheValid;
+
+        public static byte[] GetCompanyLogo()
+        {
+            if (_logoCacheValid) return _logoCache;
+            byte[] bytes = null;
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand("SELECT ImageBytes FROM CompanyLogo WHERE LogoID = 1;", conn))
+                    {
+                        object v = cmd.ExecuteScalar();
+                        if (v != null && v != DBNull.Value) bytes = (byte[])v;
+                    }
+                }
+            }
+            catch { }
+            _logoCache      = bytes;
+            _logoCacheValid = true;
+            return bytes;
+        }
+
+        public static bool HasCompanyLogo() => GetCompanyLogo() != null;
+
+        // The name of the file it came from, kept only so the operator can recognise which
+        // picture is currently set. Nothing reads it back off disk.
+        public static string GetCompanyLogoName()
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    using (var cmd = new SQLiteCommand("SELECT FileName FROM CompanyLogo WHERE LogoID = 1;", conn))
+                    {
+                        object v = cmd.ExecuteScalar();
+                        if (v != null && v != DBNull.Value) return v.ToString();
+                    }
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        // Throws on failure so the caller can tell the operator. A logo that silently fails to
+        // save is one they only discover on a printed slip, which by then cannot be reprinted
+        // differently without a reprint of the whole record.
+        public static void SaveCompanyLogo(byte[] bytes, string fileName)
+        {
+            if (bytes == null || bytes.Length == 0)
+                throw new ArgumentException("The image is empty.", nameof(bytes));
+
+            using (var conn = new SQLiteConnection(ConnStr))
+            {
+                conn.Open();
+                using (var cmd = new SQLiteCommand(@"
+                    INSERT INTO CompanyLogo (LogoID, ImageBytes, FileName, SavedAt)
+                    VALUES (1, @B, @N, datetime('now','localtime'))
+                    ON CONFLICT(LogoID) DO UPDATE SET
+                        ImageBytes = excluded.ImageBytes,
+                        FileName   = excluded.FileName,
+                        SavedAt    = excluded.SavedAt;", conn))
+                {
+                    cmd.Parameters.Add("@B", DbType.Binary).Value = bytes;
+                    cmd.Parameters.AddWithValue("@N", fileName ?? "");
+                    cmd.ExecuteNonQuery();
+                }
+            }
+            _logoCacheValid = false;
+        }
+
+        public static void ClearCompanyLogo()
+        {
+            try
+            {
+                using (var conn = new SQLiteConnection(ConnStr))
+                {
+                    conn.Open();
+                    ExecNQ(conn, "DELETE FROM CompanyLogo;");
+                }
+            }
+            catch { }
+            _logoCacheValid = false;
         }
 
         // ===================================================================

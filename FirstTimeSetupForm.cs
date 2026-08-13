@@ -10,7 +10,9 @@ namespace SlipManagement2
     {
         private TextBox  txtCompanyName;
         private ComboBox cmbPrinter;
-        private TextBox  txtLogoPath;
+        private Label    _lblLogoName;
+        private byte[]   _logoBytes;
+        private string   _logoName = "";
         private ComboBox cmbPaperSize;
         private TextBox  txtSlipLength;
         private Label    lblSlipLength;
@@ -72,17 +74,21 @@ namespace SlipManagement2
             };
             Controls.Add(txtCompanyName);
 
-            // Logo file
-            Controls.Add(new Label { Text = "Logo File Path (optional):", Location = new Point(20, 148), AutoSize = true });
-            txtLogoPath = new TextBox
+            // Logo. The picture is copied into the database on Get Started rather than remembered
+            // as a path, so it keeps working if the original file is later moved or deleted.
+            Controls.Add(new Label { Text = "Company Logo (optional, printed on every slip):", Location = new Point(20, 148), AutoSize = true });
+            _lblLogoName = new Label
             {
-                Location = new Point(20, 166),
-                Size     = new Size(396, 22),
+                Text      = "No logo chosen.",
+                Location  = new Point(20, 170),
+                Size      = new Size(396, 20),
+                Font      = new Font("Arial", 8),
+                ForeColor = Color.FromArgb(90, 90, 90),
             };
-            Controls.Add(txtLogoPath);
+            Controls.Add(_lblLogoName);
             var btnBrowse = new Button
             {
-                Text      = "Browse...",
+                Text      = "Choose...",
                 Location  = new Point(424, 164),
                 Size      = new Size(76, 26),
                 FlatStyle = FlatStyle.Flat,
@@ -228,8 +234,27 @@ namespace SlipManagement2
         {
             using (var ofd = new OpenFileDialog { Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp" })
             {
-                if (ofd.ShowDialog() == DialogResult.OK)
-                    txtLogoPath.Text = ofd.FileName;
+                if (ofd.ShowDialog() != DialogResult.OK) return;
+
+                try
+                {
+                    byte[] bytes = System.IO.File.ReadAllBytes(ofd.FileName);
+
+                    // Check it decodes before accepting it, so a bad file is caught here and not
+                    // on the first printed slip.
+                    using (var ms = new System.IO.MemoryStream(bytes))
+                    using (Image.FromStream(ms)) { }
+
+                    _logoBytes        = bytes;
+                    _logoName         = System.IO.Path.GetFileName(ofd.FileName);
+                    _lblLogoName.Text = _logoName + "   (" + Math.Round(bytes.Length / 1024.0) + " KB)";
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("That file could not be used as a logo:\n\n" + ex.Message +
+                        "\n\nTry a .jpg, .png or .bmp image.",
+                        "Logo Not Loaded", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
         }
 
@@ -284,7 +309,8 @@ namespace SlipManagement2
             // 3. Initialize database and persist global settings
             DatabaseManager.InitializeDatabase();
             DatabaseManager.SaveGlobalSetting("HeaderTitle", companyName);
-            DatabaseManager.SaveGlobalSetting("LogoPath",    txtLogoPath.Text.Trim());
+            if (_logoBytes != null)
+                DatabaseManager.SaveCompanyLogo(_logoBytes, _logoName);
 
             string printer   = cmbPrinter.SelectedItem?.ToString();
             string paperSize = cmbPaperSize.SelectedItem?.ToString() ?? PaperSizeHelper.DefaultProfile;
