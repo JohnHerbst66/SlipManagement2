@@ -104,32 +104,43 @@ namespace SlipManagement2
         {
             const int lx = 430;   // right-column label x — starts well clear of the left column
             const int cx = 640;   // right-column control x
-            const int cw = 230;   // control width — right edge at 870, safe within 950px form
+            const int cw = 190;   // control width — right edge at 830, clear of the form edge once
+                                  // Windows scales the form up on a high-DPI display
+            const int rh = 38;    // row pitch — a 22px control plus breathing room
 
-            AddSectionHeader("Company / Slip",     lx, 65);
+            AddSectionHeader("Company / Slip", lx, 65);
 
-            AddLabel("Company Name:", lx, 102);
-            txtHeaderTitle = AddTextBox(cx, 99, cw);
+            // These two rows used to sit 15px apart while the boxes are 22px tall, so they
+            // overlapped and read as one control with two lines of text in it.
+            int rowY = 99;
+            AddLabel("Company Name:", lx, rowY + 3);
+            txtHeaderTitle = AddTextBox(cx, rowY, cw);
 
+            rowY += rh;
             // label2 from the designer is the slip-length label — relocate it to the right column
             label2.Text            = "Slip Length (in):";
-            label2.Location        = new Point(lx, 117);
-            txtSlipLength.Location = new Point(cx, 114);
+            label2.Location        = new Point(lx, rowY + 3);
+            txtSlipLength.Location = new Point(cx, rowY);
             txtSlipLength.Width    = cw;
 
-            AddSectionHeader("Print Margins (mm)", lx, 155);
+            rowY += rh;
+            AddSectionHeader("Print Margins (mm)", lx, rowY);
 
-            AddLabel("Top:",    lx, 181);
-            numMarginTop    = AddMarginSpinner(cx, 178);
+            rowY += 26;
+            AddLabel("Top:",    lx, rowY + 3);
+            numMarginTop    = AddMarginSpinner(cx, rowY);
 
-            AddLabel("Left:",   lx, 219);
-            numMarginLeft   = AddMarginSpinner(cx, 216);
+            rowY += rh;
+            AddLabel("Left:",   lx, rowY + 3);
+            numMarginLeft   = AddMarginSpinner(cx, rowY);
 
-            AddLabel("Right:",  lx, 257);
-            numMarginRight  = AddMarginSpinner(cx, 254);
+            rowY += rh;
+            AddLabel("Right:",  lx, rowY + 3);
+            numMarginRight  = AddMarginSpinner(cx, rowY);
 
-            AddLabel("Bottom:", lx, 295);
-            numMarginBottom = AddMarginSpinner(cx, 292);
+            rowY += rh;
+            AddLabel("Bottom:", lx, rowY + 3);
+            numMarginBottom = AddMarginSpinner(cx, rowY);
         }
 
         private void AddSectionHeader(string text, int x, int y)

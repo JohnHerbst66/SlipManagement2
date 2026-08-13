@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Printing;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace SlipManagement2
@@ -21,13 +22,47 @@ namespace SlipManagement2
             var (pageWMm, pageHMm) = GetPageDimensionsMm();
 
             var pd = BuildBaseDocument();
+            pd.DocumentName = BuildDocumentName(slipData);
             pd.PrintPage += (s, ev) =>
                 RenderSlipFromDimensions(ev, slipData,
                     pageWMm, pageHMm,
                     profile.MarginLeftMM, profile.MarginTopMM,
                     profile.MarginRightMM, profile.MarginBottomMM,
-                    profile.SlipFontScale, profile.SlipOffsetXMm, profile.SlipOffsetYMm);
+                    profile.SlipFontScale, profile.SlipOffsetXMm, profile.SlipOffsetYMm,
+                    profile.CopiesPerPage, profile.MultiSlipLayout);
             return pd;
+        }
+
+        // The job name, which is what "Microsoft Print to PDF" offers as the default filename in
+        // its Save dialog. Without it every slip lands as "SlipManagement2.exe" and the operator
+        // has to invent a name for each one. Bill number first because it is unique and sorts by
+        // date; then the leading field's value — Truck Reg by default — so a folder of PDFs can
+        // be scanned by eye. The operator can still overwrite it in the dialog.
+        private static string BuildDocumentName(Dictionary<string, string> slipData)
+        {
+            string bill = V(slipData, "BillNumber");
+            if (bill == "----") bill = "Slip";
+
+            // The leading field by the operator's own ordering, not necessarily Field1 — if they
+            // reordered the form, the first thing they see is the first thing they will look for.
+            string lead = "";
+            var cfgs = DatabaseManager.GetActiveFieldConfigurations();
+            foreach (var kvp in cfgs.OrderBy(k => k.Value.PositionOrder))
+            {
+                if (kvp.Value.IsHidden || kvp.Key == "Field7") continue;
+                if (slipData.TryGetValue(kvp.Key, out string v) && !string.IsNullOrWhiteSpace(v))
+                { lead = v.Trim(); break; }
+            }
+
+            string name = string.IsNullOrEmpty(lead) ? bill : bill + " - " + lead;
+
+            // Strip what Windows will not accept in a filename, so the Save dialog opens with a
+            // name it can actually use rather than one the operator has to correct.
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                name = name.Replace(c, ' ');
+            name = System.Text.RegularExpressions.Regex.Replace(name, @"\s+", " ").Trim();
+
+            return name.Length > 80 ? name.Substring(0, 80).Trim() : name;
         }
 
         // Builds a calibration-test PrintDocument with explicit parameters.
@@ -39,7 +74,7 @@ namespace SlipManagement2
             double marginRightMm, double marginBottomMm,
             float fontScale = 1.0f,
             float contentOffsetXMm = 0f, float contentOffsetYMm = 0f,
-            int copiesPerPage = 0)
+            int copiesPerPage = 0, string multiSlipLayout = null)
         {
             var pd = new PrintDocument();
 
@@ -65,7 +100,7 @@ namespace SlipManagement2
                 RenderSlipFromDimensions(ev, slipData,
                     pageWidthMm, pageHeightMm,
                     marginLeftMm, marginTopMm, marginRightMm, marginBottomMm,
-                    fontScale, contentOffsetXMm, contentOffsetYMm, copiesPerPage);
+                    fontScale, contentOffsetXMm, contentOffsetYMm, copiesPerPage, multiSlipLayout);
             return pd;
         }
 
@@ -85,6 +120,64 @@ namespace SlipManagement2
             pd.DefaultPageSettings.Margins   = new Margins(mLeft, mRight, mTop, mBottom);
             pd.PrintPage += (s, ev) => RenderCalibrationGrid(ev);
             return pd;
+        }
+
+        // "Microsoft Print to PDF" and the XPS writer collect a filename through their own Save
+        // dialog, and that dialog ignores DocumentName — it opens with the box empty no matter
+        // what the job is called. Setting DocumentName only renames the job, which is why it
+        // shows in the Printing progress window but not in the Save box.
+        //
+        // So we ask first, with the name already filled in, and hand the driver the chosen path.
+        // Given a path it writes straight to it and never shows its own dialog, so the operator
+        // still sees exactly one Save box — just one that arrives pre-named.
+        private static bool IsFileOutputPrinter(string printerName)
+        {
+            if (string.IsNullOrEmpty(printerName)) return false;
+            string n = printerName.ToLowerInvariant();
+            // Only the two drivers we know honour PrintFileName. A third-party PDF printer that
+            // ignored it would show its own dialog after ours, which is worse than leaving it be.
+            return n.Contains("print to pdf") || n.Contains("xps document writer");
+        }
+
+        // Returns false if the operator cancelled — the caller must then not treat the slip as
+        // printed. Nothing to do for a real printer, which returns true untouched.
+        public static bool TryPrepareFileOutput(PrintDocument pd, IWin32Window owner)
+        {
+            if (pd == null) return false;
+            if (!IsFileOutputPrinter(pd.PrinterSettings.PrinterName)) return true;
+
+            bool isXps = pd.PrinterSettings.PrinterName
+                .IndexOf("xps", StringComparison.OrdinalIgnoreCase) >= 0;
+            string ext = isXps ? ".xps" : ".pdf";
+
+            using (var sfd = new SaveFileDialog
+            {
+                Title            = "Save Slip As",
+                FileName         = (string.IsNullOrWhiteSpace(pd.DocumentName) ? "Slip" : pd.DocumentName) + ext,
+                Filter           = isXps ? "XPS Document (*.xps)|*.xps" : "PDF Document (*.pdf)|*.pdf",
+                DefaultExt       = ext.TrimStart('.'),
+                AddExtension     = true,
+                OverwritePrompt  = true,
+                InitialDirectory = LastFileOutputFolder(),
+            })
+            {
+                if (sfd.ShowDialog(owner) != DialogResult.OK) return false;
+
+                // Remember the folder so a run of slips does not restart in Documents each time.
+                try { DatabaseManager.SaveGlobalSetting("LastPrintToFileFolder",
+                          System.IO.Path.GetDirectoryName(sfd.FileName) ?? ""); } catch { }
+
+                pd.PrinterSettings.PrintToFile   = true;
+                pd.PrinterSettings.PrintFileName = sfd.FileName;
+            }
+            return true;
+        }
+
+        private static string LastFileOutputFolder()
+        {
+            string saved = DatabaseManager.GetGlobalSetting("LastPrintToFileFolder", "");
+            if (!string.IsNullOrWhiteSpace(saved) && System.IO.Directory.Exists(saved)) return saved;
+            return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         }
 
         // Sends directly to the printer using current DB settings.
@@ -155,7 +248,7 @@ namespace SlipManagement2
             double pageWidthMm, double pageHeightMm,
             double leftMm, double topMm, double rightMm, double bottomMm,
             float fontScale, float contentOffsetXMm, float contentOffsetYMm,
-            int copiesPerPage = 0)
+            int copiesPerPage = 0, string multiSlipLayout = null)
         {
             float leftU = (float)(leftMm  / 25.4 * 100);
             float topU  = (float)(topMm   / 25.4 * 100);
@@ -172,7 +265,7 @@ namespace SlipManagement2
             ev.Graphics.SetClip(new RectangleF(0, 0, pgW, pgH));
 
             var area = new RectangleF(leftU + offXU, topU + offYU, areaW, areaH);
-            RenderSlipForPreview(ev.Graphics, area, slipData, fontScale, copiesPerPage);
+            RenderSlipForPreview(ev.Graphics, area, slipData, fontScale, copiesPerPage, multiSlipLayout);
 
             ev.Graphics.ResetClip();
             ev.HasMorePages = false;
@@ -241,6 +334,45 @@ namespace SlipManagement2
             g.DrawLine(pen, cx, cy - arm, cx, cy + arm);
         }
 
+        // RenderSlipContent runs once per copy and again for every preview repaint, so a broken
+        // logo would otherwise raise a dialog dozens of times. Warn on the first one only.
+        private static bool _logoFailureReported;
+
+        private static void ReportLogoFailure(Exception ex)
+        {
+            if (_logoFailureReported) return;
+            _logoFailureReported = true;
+
+            MessageBox.Show(
+                "The company logo could not be drawn, so slips will print without it.\n\n" +
+                "The saved image is unreadable: " + ex.Message + "\n\n" +
+                "Everything else on the slip is unaffected. To fix it, open Customize Slips " +
+                "and choose the logo image again.",
+                "Logo Could Not Be Printed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // Lets a freshly chosen logo re-warn if it too turns out to be broken.
+        internal static void ResetLogoFailureWarning() => _logoFailureReported = false;
+
+        // Printed height of the logo in millimetres. Bounded because this reaches the page
+        // directly: an unbounded value could push every field off the bottom of a small slip.
+        internal const float LogoHeightMinMm     = 3f;
+        internal const float LogoHeightMaxMm     = 40f;
+        internal const float LogoHeightDefaultMm = 15f;
+
+        private static float LogoHeightMm()
+        {
+            string raw = DatabaseManager.GetGlobalSetting(
+                "LogoHeightMm", LogoHeightDefaultMm.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            float mm;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out mm))
+                mm = LogoHeightDefaultMm;
+
+            return Math.Max(LogoHeightMinMm, Math.Min(LogoHeightMaxMm, mm));
+        }
+
         // ===================================================================
         // SLIP CONTENT RENDERER
         // ===================================================================
@@ -258,30 +390,81 @@ namespace SlipManagement2
             var fieldCfgs = DatabaseManager.GetActiveFieldConfigurations();
 
             // ---- HEADER ----
-            string company  = DatabaseManager.GetGlobalSetting("HeaderTitle", "SLIP MANAGEMENT SYSTEM");
-            string logoPath = DatabaseManager.GetGlobalSetting("LogoPath", "");
+            string company   = DatabaseManager.GetGlobalSetting("HeaderTitle", "SLIP MANAGEMENT SYSTEM");
+            byte[] logoBytes = DatabaseManager.GetCompanyLogo();
 
-            if (!string.IsNullOrEmpty(logoPath) && System.IO.File.Exists(logoPath))
+            // Placement earns its keep on small paper. Stacked above the name the logo costs its
+            // full height before a single field prints — on 102mm-tall stock that is roughly a
+            // sixth of the slip. Beside the name it shares a row that has to exist regardless.
+            bool  logoOnLeft = DatabaseManager.GetGlobalSetting("LogoPlacement", "Above")
+                                              .Equals("Left", StringComparison.OrdinalIgnoreCase);
+            float logoH      = LogoHeightMm() / 25.4f * 100f;   // mm to printer units (100ths in)
+
+            Image                  logoImg    = null;
+            System.IO.MemoryStream logoStream = null;
+            if (logoBytes != null)
             {
                 try
                 {
-                    using (var img = Image.FromFile(logoPath))
-                    {
-                        float logoH = (float)(15 / 25.4 * 100);   // 15mm
-                        float logoW = img.Width * (logoH / img.Height);
-                        g.DrawImage(img, x + (w - logoW) / 2f, y, logoW, logoH);
-                        y += logoH + 4;
-                    }
+                    // GDI+ reads from the stream lazily, so it must stay open until after the
+                    // draw. Hence the explicit dispose below rather than a using here.
+                    logoStream = new System.IO.MemoryStream(logoBytes);
+                    logoImg    = Image.FromStream(logoStream);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    if (logoStream != null) { logoStream.Dispose(); logoStream = null; }
+                    logoImg = null;
+
+                    // Stored but undecodable. Say so once rather than print a slip that quietly
+                    // lacks its letterhead — on a proof-of-record document a silent omission is
+                    // worse than an interruption, and the operator can still choose to continue.
+                    ReportLogoFailure(ex);
+                }
             }
 
-            using (var hFont = new Font("Arial", 13 * fontScale, FontStyle.Bold))
+            try
             {
-                var sfCentre = new StringFormat { Alignment = StringAlignment.Center };
-                var hRect    = new RectangleF(x, y, w, hFont.GetHeight(g) + 4);
-                g.DrawString(company, hFont, Brushes.Black, hRect, sfCentre);
-                y += hFont.GetHeight(g) + 5;
+                using (var hFont = new Font("Arial", 13 * fontScale, FontStyle.Bold))
+                {
+                    float textH = hFont.GetHeight(g) + 4;
+
+                    if (logoImg != null && logoOnLeft)
+                    {
+                        // Width follows the image's own proportions so it never distorts, but is
+                        // capped at 40% so a very wide logo cannot crowd out the company name.
+                        float logoW = Math.Min(logoImg.Width * (logoH / logoImg.Height), w * 0.4f);
+                        float rowH  = Math.Max(logoH, textH);
+                        const float gap = 6;
+
+                        g.DrawImage(logoImg, x, y + (rowH - logoH) / 2f, logoW, logoH);
+
+                        var nameRect = new RectangleF(x + logoW + gap, y, w - logoW - gap, rowH);
+                        g.DrawString(company, hFont, Brushes.Black, nameRect,
+                            new StringFormat { Alignment     = StringAlignment.Center,
+                                               LineAlignment = StringAlignment.Center });
+                        y += rowH + 5;
+                    }
+                    else
+                    {
+                        if (logoImg != null)
+                        {
+                            float logoW = Math.Min(logoImg.Width * (logoH / logoImg.Height), w);
+                            g.DrawImage(logoImg, x + (w - logoW) / 2f, y, logoW, logoH);
+                            y += logoH + 4;
+                        }
+
+                        var hRect = new RectangleF(x, y, w, textH);
+                        g.DrawString(company, hFont, Brushes.Black, hRect,
+                            new StringFormat { Alignment = StringAlignment.Center });
+                        y += textH + 1;
+                    }
+                }
+            }
+            finally
+            {
+                if (logoImg    != null) logoImg.Dispose();
+                if (logoStream != null) logoStream.Dispose();
             }
 
             using (var thick = new Pen(Color.Black, 2)) g.DrawLine(thick, x, y, x + w, y);
@@ -409,19 +592,48 @@ namespace SlipManagement2
             return PaperSizeHelper.GetDimensionsMm(paperProfile, lenIn);
         }
 
-        // Renders the slip content into slipAreaUnits using the copies-per-page grid layout:
-        //   1 copy  → full area
-        //   2 copies → split on X axis (left | right column), full height each
-        //   4 copies → 2×2 grid, all four cells filled
-        // 3-copies is not supported (asymmetric layout removed); any caller passing 3
-        // is treated as 2. copiesPerPage = 0 reads from the active profile.
+        // How multiple copies are arranged on one page. The operator picks this on the
+        // calibration screen, because which way the slips sit — and therefore which way the
+        // page is torn or guillotined — depends on their paper and their habits, not on us.
+        public const string LayoutColumns = "Columns";   // side by side, cut down the middle
+        public const string LayoutRows    = "Rows";      // stacked, cut across
+        public const string LayoutGrid    = "Grid";      // 2x2, only meaningful for 4 copies
+
+        // Resolves copies + arrangement into a column/row count. Single source of truth: the
+        // print path, the calibration preview and its cell-size maths all call this, so the
+        // paper can never disagree with what was shown on screen.
+        internal static void GetTiling(int copiesPerPage, string layout, out int cols, out int rows)
+        {
+            if (copiesPerPage <= 1) { cols = 1; rows = 1; return; }
+
+            bool stacked = string.Equals(layout, LayoutRows, StringComparison.OrdinalIgnoreCase);
+
+            if (copiesPerPage == 2)
+            {
+                // Grid is meaningless for two, so it falls back to side by side.
+                if (stacked) { cols = 1; rows = 2; } else { cols = 2; rows = 1; }
+                return;
+            }
+
+            if (stacked)                                                          { cols = 1; rows = 4; return; }
+            if (string.Equals(layout, LayoutColumns, StringComparison.OrdinalIgnoreCase)) { cols = 4; rows = 1; return; }
+            cols = 2; rows = 2;
+        }
+
+        // Renders the slip into slipAreaUnits, repeated across the tiling above. Dashed lines
+        // mark where to cut. 3 copies is not supported (asymmetric layout removed) and is
+        // treated as 2. copiesPerPage = 0 and layout = null read from the active profile.
         internal static void RenderSlipForPreview(
             Graphics g, RectangleF slipAreaUnits,
             Dictionary<string, string> slipData, float fontScale = 1.0f,
-            int copiesPerPage = 0)
+            int copiesPerPage = 0, string layout = null)
         {
-            if (copiesPerPage <= 0)
-                copiesPerPage = DatabaseManager.GetActiveProfile().CopiesPerPage;
+            if (copiesPerPage <= 0 || layout == null)
+            {
+                var prof = DatabaseManager.GetActiveProfile();
+                if (copiesPerPage <= 0) copiesPerPage = prof.CopiesPerPage;
+                if (layout == null)     layout        = prof.MultiSlipLayout;
+            }
 
             // Normalise: only 1, 2, 4 are valid; treat 3 as 2, clamp anything else.
             if (copiesPerPage == 3) copiesPerPage = 2;
@@ -433,43 +645,36 @@ namespace SlipManagement2
                 return;
             }
 
+            GetTiling(copiesPerPage, layout, out int cols, out int rows);
+
             float ax = slipAreaUnits.X;
             float ay = slipAreaUnits.Y;
             float aw = slipAreaUnits.Width;
             float ah = slipAreaUnits.Height;
-            float hw = aw / 2f;
-            float hh = ah / 2f;
-            float gU = (float)(1.0 / 25.4 * 100);   // 1 mm half-gap each side of divider
+            float cw = aw / cols;
+            float ch = ah / rows;
+            float gU = (float)(1.0 / 25.4 * 100);   // 1 mm half-gap each side of a divider
 
-            if (copiesPerPage == 2)
-            {
-                // Two columns, full height
-                RenderSlipContent(g, new RectangleF(ax,           ay, hw - gU, ah), slipData, fontScale);
-                RenderSlipContent(g, new RectangleF(ax + hw + gU, ay, hw - gU, ah), slipData, fontScale);
-
-                float midX = ax + hw;
-                using (var p = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
-                    g.DrawLine(p, midX, ay, midX, ay + ah);
-            }
-            else   // 4 copies — full 2×2 grid
-            {
-                RectangleF Cell(int col, int row)
-                    => new RectangleF(ax + col * hw + (col == 0 ? 0 : gU),
-                                      ay + row * hh + (row == 0 ? 0 : gU),
-                                      hw - gU, hh - gU);
-
-                RenderSlipContent(g, Cell(0, 0), slipData, fontScale);
-                RenderSlipContent(g, Cell(1, 0), slipData, fontScale);
-                RenderSlipContent(g, Cell(0, 1), slipData, fontScale);
-                RenderSlipContent(g, Cell(1, 1), slipData, fontScale);
-
-                float midX = ax + hw;
-                float midY = ay + hh;
-                using (var p = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
+            for (int row = 0; row < rows; row++)
+                for (int col = 0; col < cols; col++)
                 {
-                    g.DrawLine(p, midX, ay,  midX, ay + ah);
-                    g.DrawLine(p, ax,   midY, ax + aw, midY);
+                    // Only inner edges lose the gap; the outer edges keep the full margin.
+                    float cellX = ax + col * cw + (col == 0 ? 0 : gU);
+                    float cellY = ay + row * ch + (row == 0 ? 0 : gU);
+                    float cellW = cw - (col == 0 || col == cols - 1 ? gU : gU * 2);
+                    float cellH = ch - (row == 0 || row == rows - 1 ? gU : gU * 2);
+                    if (cols == 1) cellW = cw;
+                    if (rows == 1) cellH = ch;
+
+                    RenderSlipContent(g, new RectangleF(cellX, cellY, cellW, cellH), slipData, fontScale);
                 }
+
+            using (var p = new Pen(Color.Black, 1) { DashStyle = DashStyle.Dash })
+            {
+                for (int col = 1; col < cols; col++)
+                    g.DrawLine(p, ax + col * cw, ay, ax + col * cw, ay + ah);
+                for (int row = 1; row < rows; row++)
+                    g.DrawLine(p, ax, ay + row * ch, ax + aw, ay + row * ch);
             }
         }
 

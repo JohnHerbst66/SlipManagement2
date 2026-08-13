@@ -8,7 +8,16 @@ namespace SlipManagement2
     public partial class CustomizeSlipsForm : Form
     {
         private TextBox txtCompanyHeader;
-        private TextBox txtLogoPath;
+
+        // The logo is held as bytes, not as a path, and is written on Save along with everything
+        // else on this form — so choosing one and then cancelling leaves the stored logo alone.
+        private PictureBox    _picLogo;
+        private Label         _lblLogoName;
+        private ComboBox      _cboLogoPlacement;
+        private NumericUpDown _numLogoHeight;
+        private byte[]     _logoBytes;
+        private string     _logoName = "";
+        private bool       _logoChanged;
         private Panel pnlSlipFields;
         private Panel pnlRequiredFields;
         private bool _loadingChecklists = false;
@@ -124,10 +133,56 @@ namespace SlipManagement2
             Label lblHeader = new Label() { Text = "Company Header Text:", Location = new System.Drawing.Point(20, 25), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
             txtCompanyHeader = new TextBox() { Location = new System.Drawing.Point(20, 45), Size = new System.Drawing.Size(350, 22) };
 
-            Label lblLogo = new Label() { Text = "Company Image Logo File Path:", Location = new System.Drawing.Point(20, 85), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
-            txtLogoPath = new TextBox() { Location = new System.Drawing.Point(20, 105), Size = new System.Drawing.Size(260, 22) };
-            Button btnBrowse = new Button() { Text = "Browse...", Location = new System.Drawing.Point(290, 103), Size = new System.Drawing.Size(80, 25), FlatStyle = FlatStyle.Flat };
-            btnBrowse.Click += BtnBrowse_Click;
+            Label lblLogo = new Label() { Text = "Company Logo (printed at the top of every slip):", Location = new System.Drawing.Point(20, 80), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
+
+            // Shows the picture itself rather than a file path. The operator needs to know which
+            // logo is set, and a path told them nothing about that once the file had moved.
+            _picLogo = new PictureBox()
+            {
+                Location    = new System.Drawing.Point(20, 98),
+                Size        = new System.Drawing.Size(104, 42),
+                SizeMode    = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor   = System.Drawing.SystemColors.Window,
+            };
+
+            _lblLogoName = new Label()
+            {
+                Location  = new System.Drawing.Point(134, 100),
+                AutoSize  = true,
+                Font      = new System.Drawing.Font("Arial", 8),
+                ForeColor = System.Drawing.Color.FromArgb(90, 90, 90),
+            };
+
+            Button btnChooseLogo = new Button() { Text = "Choose Image...", Location = new System.Drawing.Point(134, 118), Size = new System.Drawing.Size(104, 22), FlatStyle = FlatStyle.Flat, Font = new System.Drawing.Font("Arial", 8) };
+            btnChooseLogo.Click += BtnChooseLogo_Click;
+
+            Button btnRemoveLogo = new Button() { Text = "Remove", Location = new System.Drawing.Point(246, 118), Size = new System.Drawing.Size(88, 22), FlatStyle = FlatStyle.Flat, Font = new System.Drawing.Font("Arial", 8) };
+            btnRemoveLogo.Click += BtnRemoveLogo_Click;
+
+            // Above the name costs the logo's full height before any field prints. Beside it, the
+            // logo shares the header row, which matters on short paper where every mm is a field.
+            Label lblPlacement = new Label() { Text = "Position on slip:", Location = new System.Drawing.Point(350, 82), AutoSize = true, Font = new System.Drawing.Font("Arial", 8, System.Drawing.FontStyle.Bold) };
+            _cboLogoPlacement = new ComboBox()
+            {
+                Location      = new System.Drawing.Point(350, 100),
+                Size          = new System.Drawing.Size(132, 22),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font          = new System.Drawing.Font("Arial", 8),
+            };
+            _cboLogoPlacement.Items.AddRange(new object[] { "Above the name", "Left of the name" });
+
+            Label lblLogoHeight = new Label() { Text = "Height (mm):", Location = new System.Drawing.Point(494, 82), AutoSize = true, Font = new System.Drawing.Font("Arial", 8, System.Drawing.FontStyle.Bold) };
+            _numLogoHeight = new NumericUpDown()
+            {
+                Location      = new System.Drawing.Point(494, 100),
+                Size          = new System.Drawing.Size(62, 22),
+                Minimum       = (decimal)SlipPrintEngine.LogoHeightMinMm,
+                Maximum       = (decimal)SlipPrintEngine.LogoHeightMaxMm,
+                Value         = (decimal)SlipPrintEngine.LogoHeightDefaultMm,
+                DecimalPlaces = 0,
+                Font          = new System.Drawing.Font("Arial", 8),
+            };
 
             Label lblChecklist = new Label() { Text = "Select which fields print on the final slip:", Location = new System.Drawing.Point(20, 150), AutoSize = true, Font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold) };
             pnlSlipFields = new Panel()
@@ -169,8 +224,14 @@ namespace SlipManagement2
             tabSlipDesign.Controls.Add(lblHeader);
             tabSlipDesign.Controls.Add(txtCompanyHeader);
             tabSlipDesign.Controls.Add(lblLogo);
-            tabSlipDesign.Controls.Add(txtLogoPath);
-            tabSlipDesign.Controls.Add(btnBrowse);
+            tabSlipDesign.Controls.Add(_picLogo);
+            tabSlipDesign.Controls.Add(_lblLogoName);
+            tabSlipDesign.Controls.Add(btnChooseLogo);
+            tabSlipDesign.Controls.Add(btnRemoveLogo);
+            tabSlipDesign.Controls.Add(lblPlacement);
+            tabSlipDesign.Controls.Add(_cboLogoPlacement);
+            tabSlipDesign.Controls.Add(lblLogoHeight);
+            tabSlipDesign.Controls.Add(_numLogoHeight);
             tabSlipDesign.Controls.Add(lblChecklist);
             tabSlipDesign.Controls.Add(pnlSlipFields);
             tabSlipDesign.Controls.Add(lblRequired);
@@ -184,7 +245,24 @@ namespace SlipManagement2
             try
             {
                 txtCompanyHeader.Text = DatabaseManager.GetGlobalSetting("HeaderTitle", "UITVAL GRONDE PTY (LTD)");
-                txtLogoPath.Text      = DatabaseManager.GetGlobalSetting("LogoPath", "");
+
+                _logoBytes   = DatabaseManager.GetCompanyLogo();
+                _logoName    = DatabaseManager.GetCompanyLogoName();
+                _logoChanged = false;
+                RefreshLogoPreview();
+
+                _cboLogoPlacement.SelectedIndex =
+                    DatabaseManager.GetGlobalSetting("LogoPlacement", "Above")
+                                   .Equals("Left", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+
+                decimal h;
+                if (!decimal.TryParse(DatabaseManager.GetGlobalSetting("LogoHeightMm", "15"),
+                        System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out h))
+                    h = (decimal)SlipPrintEngine.LogoHeightDefaultMm;
+
+                _numLogoHeight.Value = Math.Max(_numLogoHeight.Minimum,
+                                        Math.Min(_numLogoHeight.Maximum, decimal.Round(h)));
 
                 RefreshChecklistFromGrid();
             }
@@ -194,12 +272,96 @@ namespace SlipManagement2
             }
         }
 
-        private void BtnBrowse_Click(object sender, EventArgs e)
+        private void BtnChooseLogo_Click(object sender, EventArgs e)
         {
             using (var ofd = new OpenFileDialog() { Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp" })
             {
-                if (ofd.ShowDialog() == DialogResult.OK)
-                    txtLogoPath.Text = ofd.FileName;
+                if (ofd.ShowDialog() != DialogResult.OK) return;
+
+                byte[] bytes;
+                try { bytes = System.IO.File.ReadAllBytes(ofd.FileName); }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("That file could not be read:\n\n" + ex.Message,
+                        "Logo Not Loaded", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Prove it decodes now, while the operator is standing here and can pick another.
+                // Finding out at the printer means a slip already on paper without its letterhead.
+                try
+                {
+                    using (var ms = new System.IO.MemoryStream(bytes))
+                    using (System.Drawing.Image.FromStream(ms)) { }
+                }
+                catch
+                {
+                    MessageBox.Show("That file is not an image the system can read.\n\n" +
+                        "Try a .jpg, .png or .bmp saved from an image editor.",
+                        "Logo Not Loaded", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // The picture is copied into the database, so an oversized one is carried by every
+                // backup from here on. It only ever prints 15mm tall, so large files buy nothing.
+                if (bytes.Length > 1024 * 1024)
+                {
+                    var go = MessageBox.Show(
+                        "That image is " + Math.Round(bytes.Length / 1024.0 / 1024.0, 1) + " MB.\n\n" +
+                        "It is stored inside the database and copied by every backup, and it only " +
+                        "prints about 15 mm tall, so a smaller version would look identical.\n\n" +
+                        "Use it anyway?",
+                        "Large Image", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (go != DialogResult.Yes) return;
+                }
+
+                _logoBytes   = bytes;
+                _logoName    = System.IO.Path.GetFileName(ofd.FileName);
+                _logoChanged = true;
+                RefreshLogoPreview();
+            }
+        }
+
+        private void BtnRemoveLogo_Click(object sender, EventArgs e)
+        {
+            if (_logoBytes == null) return;
+            if (MessageBox.Show("Remove the logo, so slips print with the company name only?",
+                    "Remove Logo", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            _logoBytes   = null;
+            _logoName    = "";
+            _logoChanged = true;
+            RefreshLogoPreview();
+        }
+
+        private void RefreshLogoPreview()
+        {
+            var old = _picLogo.Image;
+            _picLogo.Image = null;
+            if (old != null) old.Dispose();
+
+            if (_logoBytes == null)
+            {
+                _lblLogoName.Text = "No logo set - slips print the company name only.";
+                return;
+            }
+
+            try
+            {
+                // Copied out of the MemoryStream so the stream can close: a Bitmap built straight
+                // from a stream keeps reading from it and throws once it is gone.
+                using (var ms = new System.IO.MemoryStream(_logoBytes))
+                using (var img = System.Drawing.Image.FromStream(ms))
+                    _picLogo.Image = new System.Drawing.Bitmap(img);
+
+                _lblLogoName.Text = (string.IsNullOrEmpty(_logoName) ? "Logo set" : _logoName)
+                                  + "   (" + Math.Round(_logoBytes.Length / 1024.0) + " KB)"
+                                  + (_logoChanged ? "  - not saved yet" : "");
+            }
+            catch
+            {
+                _lblLogoName.Text = "The saved logo cannot be displayed. Choose the image again.";
             }
         }
 
@@ -257,7 +419,22 @@ namespace SlipManagement2
 
                 DatabaseManager.SaveFieldConfigFromDataTable((DataTable)dgvFieldSetup.DataSource);
                 DatabaseManager.SaveGlobalSetting("HeaderTitle", txtCompanyHeader.Text.Trim());
-                DatabaseManager.SaveGlobalSetting("LogoPath",    txtLogoPath.Text.Trim());
+
+                DatabaseManager.SaveGlobalSetting("LogoPlacement",
+                    _cboLogoPlacement.SelectedIndex == 1 ? "Left" : "Above");
+                DatabaseManager.SaveGlobalSetting("LogoHeightMm",
+                    _numLogoHeight.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+                if (_logoChanged)
+                {
+                    if (_logoBytes == null) DatabaseManager.ClearCompanyLogo();
+                    else                    DatabaseManager.SaveCompanyLogo(_logoBytes, _logoName);
+
+                    // A new picture deserves its own warning if it turns out to be unprintable,
+                    // rather than being silenced by a complaint about the one it replaced.
+                    SlipPrintEngine.ResetLogoFailureWarning();
+                    _logoChanged = false;
+                }
 
                 MessageBox.Show("Configuration saved successfully.", "Saved");
                 this.DialogResult = DialogResult.OK;
