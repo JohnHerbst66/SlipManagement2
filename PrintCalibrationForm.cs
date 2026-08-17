@@ -374,6 +374,18 @@ namespace SlipManagement2
             }
         }
 
+        // The sheet as it will physically print. The spinners hold the paper's own portrait
+        // measurements — 210 x 297 for A4 whichever way it is fed — and landscape turns them
+        // round. Routed through the engine's own swap so the canvas and the paper cannot end up
+        // laid out for different shapes, which is exactly what went wrong before.
+        //
+        // Margins are deliberately NOT swapped: top, left, right and bottom mean what the
+        // operator sees on the printed page, not edges of the unrotated stock.
+        private (double wMm, double hMm) SheetMm()
+            => SlipPrintEngine.ApplyOrientation(
+                (double)_numPaperW.Value, (double)_numPaperH.Value,
+                SlipPrintEngine.IsLandscapeConfigured());
+
         // ===================================================================
         // CANVAS PAINT — three layers
         // ===================================================================
@@ -381,8 +393,7 @@ namespace SlipManagement2
         {
             Graphics g = e.Graphics;
 
-            double pageWMm = (double)_numPaperW.Value;
-            double pageHMm = (double)_numPaperH.Value;
+            var (pageWMm, pageHMm) = SheetMm();
             if (pageWMm <= 0 || pageHMm <= 0) return;
 
             float fitScale = Math.Min(
@@ -466,8 +477,9 @@ namespace SlipManagement2
 
             UpdateCopiesEnabled();
 
-            double printableW = (double)(_numPaperW.Value - _numLeft.Value - _numRight.Value);
-            double printableH = (double)(_numPaperH.Value - _numTop.Value  - _numBottom.Value);
+            var (sheetW, sheetH) = SheetMm();
+            double printableW = sheetW - (double)(_numLeft.Value + _numRight.Value);
+            double printableH = sheetH - (double)(_numTop.Value  + _numBottom.Value);
             float  fontScale  = (float)_numFontScale.Value;
 
             // Cell size comes from the same tiling rule the renderer uses, so the bitmap is

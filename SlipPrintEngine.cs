@@ -79,19 +79,23 @@ namespace SlipManagement2
             var pd = new PrintDocument();
 
             string printerName = DatabaseManager.GetGlobalSetting("SelectedPrinter",  "EPSON LX-350");
-            string orientStr   = DatabaseManager.GetGlobalSetting("PrintOrientation", "Portrait");
             string copiesStr   = DatabaseManager.GetGlobalSetting("PrintCopiesCount", "1");
 
             pd.PrinterSettings.PrinterName = printerName;
             if (short.TryParse(copiesStr, out short copies)) pd.PrinterSettings.Copies = copies;
 
-            bool isLandscape = orientStr.Equals("Landscape", StringComparison.OrdinalIgnoreCase);
+            // The caller passes the stock's own measurements, as typed on the calibration screen.
+            // The driver gets those plus the rotation flag; the renderer below gets the swapped
+            // shape, so the test page is laid out for the same sheet the preview drew.
+            bool isLandscape = IsLandscapeConfigured();
             pd.DefaultPageSettings.Landscape = isLandscape;
             pd.PrinterSettings.DefaultPageSettings.Landscape = isLandscape;
 
             int wU = (int)(pageWidthMm  / 25.4 * 100);
             int hU = (int)(pageHeightMm / 25.4 * 100);
             pd.DefaultPageSettings.PaperSize = new PaperSize("Calibration", wU, hU);
+
+            (pageWidthMm, pageHeightMm) = ApplyOrientation(pageWidthMm, pageHeightMm, isLandscape);
             pd.DefaultPageSettings.Margins   = new Margins(
                 (int)(marginLeftMm   / 25.4 * 100), (int)(marginRightMm  / 25.4 * 100),
                 (int)(marginTopMm    / 25.4 * 100), (int)(marginBottomMm / 25.4 * 100));
@@ -112,8 +116,13 @@ namespace SlipManagement2
         {
             var pd = new PrintDocument();
             pd.PrinterSettings.PrinterName = printerName;
+
+            // No swap here, and deliberately so: the measuring grid is drawn from the driver's
+            // own PageBounds and MarginBounds rather than from our numbers. It reports whatever
+            // the machine actually produces, which is the entire point of the sheet.
             pd.DefaultPageSettings.Landscape = isLandscape;
             pd.PrinterSettings.DefaultPageSettings.Landscape = isLandscape;
+
             int wu = (int)(widthMm  / 25.4 * 100);
             int hu = (int)(heightMm / 25.4 * 100);
             pd.DefaultPageSettings.PaperSize = new PaperSize(paperProfile, wu, hu);
@@ -202,19 +211,21 @@ namespace SlipManagement2
 
             string printerName  = DatabaseManager.GetGlobalSetting("SelectedPrinter",  "EPSON LX-350");
             string paperProfile = DatabaseManager.GetGlobalSetting("PaperSizeProfile",  "Small240x102");
-            string orientStr    = DatabaseManager.GetGlobalSetting("PrintOrientation",  "Portrait");
             string copiesStr    = DatabaseManager.GetGlobalSetting("PrintCopiesCount",  "1");
 
             pd.PrinterSettings.PrinterName = printerName;
             if (short.TryParse(copiesStr, out short copies))
                 pd.PrinterSettings.Copies = copies;
 
-            bool isLandscape = orientStr.Equals("Landscape", StringComparison.OrdinalIgnoreCase);
+            // The driver rotates the sheet; PaperSize below therefore carries the stock's own
+            // unrotated size, not the swapped one. Whatever draws on the page uses
+            // GetPageDimensionsMm instead, which is the post-rotation shape.
+            bool isLandscape = IsLandscapeConfigured();
             pd.DefaultPageSettings.Landscape = isLandscape;
             pd.PrinterSettings.DefaultPageSettings.Landscape = isLandscape;
 
             // Use profile's stored dimensions so calibrated sizes are respected
-            var (widthMm, heightMm) = GetPageDimensionsMm();
+            var (widthMm, heightMm) = GetPaperStockMm();
             int widthUnits  = (int)(widthMm  / 25.4 * 100);
             int heightUnits = (int)(heightMm / 25.4 * 100);
             pd.DefaultPageSettings.PaperSize = new PaperSize(paperProfile, widthUnits, heightUnits);
@@ -575,7 +586,50 @@ namespace SlipManagement2
 
         // Returns the active profile's stored page dimensions, or falls back to
         // the paper-profile switch.  Always call this rather than hard-coding.
-        internal static (double widthMm, double heightMm) GetPageDimensionsMm()
+        // Stored paper dimensions are always the sheet's own portrait measurements. Landscape
+        // turns them round — and that swap is how orientation is expressed everywhere, rather
+        // than through PageSettings.Landscape.
+        //
+        // The driver's rotation flag and an explicitly-constructed PaperSize are two separate
+        // ideas of the same page, and they used to disagree: the flag rotated A4 to 297 x 210
+        // while the renderer still laid content out for 210 x 297, so everything below 190mm
+        // fell off the bottom of the sheet. Deciding the shape once, here, is the same rule
+        // that governs the rest of this engine — never let the driver and the layout hold
+        // different beliefs about the paper.
+        internal static (double widthMm, double heightMm) ApplyOrientation(
+            double widthMm, double heightMm, bool isLandscape)
+            => isLandscape ? (heightMm, widthMm) : (widthMm, heightMm);
+
+        internal static bool IsLandscape(string orientation)
+            => !string.IsNullOrEmpty(orientation)
+               && orientation.Equals("Landscape", StringComparison.OrdinalIgnoreCase);
+
+        // Orientation is stored on the printer profile — that is what Printer Settings writes.
+        // The GlobalSettings key is the older, pre-profile copy, kept only as a fallback for a
+        // database that has no profile yet. Profile first, so the calibration screen, both
+        // previews and the print job cannot end up reading different sources and disagreeing.
+        // Read from GetAllPrinterProfiles rather than GetActiveProfile: the two return different
+        // types, and only PrinterProfileData carries Orientation — PrinterProfile is the narrower
+        // margins-and-calibration view.
+        internal static bool IsLandscapeConfigured()
+        {
+            foreach (var p in DatabaseManager.GetAllPrinterProfiles())
+                if (p.IsActive && !string.IsNullOrEmpty(p.Orientation))
+                    return IsLandscape(p.Orientation);
+
+            return IsLandscape(DatabaseManager.GetGlobalSetting("PrintOrientation", "Portrait"));
+        }
+
+        // The sheet as it will physically emerge, width first. Every caller — the print job,
+        // both preview canvases and the multi-copy cell maths — reads this one function, so
+        // the paper can never disagree with what was shown on screen.
+        // The stock's own measurements, as the paper is described on the box — 210 x 297 for A4
+        // whichever way it is fed. This is what the driver's PaperSize wants: rotation is the
+        // driver's job, requested through PageSettings.Landscape, and it expects the unrotated
+        // size alongside that flag. Handing it a pre-swapped custom size instead does NOT make
+        // it rotate; it quietly prints portrait, which is precisely what happened when this
+        // engine tried to own the rotation itself.
+        internal static (double widthMm, double heightMm) GetPaperStockMm()
         {
             var profiles = DatabaseManager.GetAllPrinterProfiles();
             foreach (var p in profiles)
@@ -590,6 +644,17 @@ namespace SlipManagement2
                 lenIn = 5.5;
 
             return PaperSizeHelper.GetDimensionsMm(paperProfile, lenIn);
+        }
+
+        // The sheet as it will physically emerge once the driver has rotated it — width first.
+        // This is the shape everything that DRAWS must use: the renderer, both preview canvases
+        // and the multi-copy cell maths. The division of labour is the point. The driver rotates
+        // the paper; we lay out for the result. When the two disagreed, content was arranged
+        // 210 x 297 and printed on a 297 x 210 sheet, so everything past 190mm fell off.
+        internal static (double widthMm, double heightMm) GetPageDimensionsMm()
+        {
+            var (wMm, hMm) = GetPaperStockMm();
+            return ApplyOrientation(wMm, hMm, IsLandscapeConfigured());
         }
 
         // How multiple copies are arranged on one page. The operator picks this on the

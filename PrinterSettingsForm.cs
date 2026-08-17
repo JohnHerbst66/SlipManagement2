@@ -344,6 +344,11 @@ namespace SlipManagement2
                 // HeaderTitle is global, not preset-specific
                 DatabaseManager.SaveGlobalSetting("HeaderTitle", headerTitle);
 
+                // Orientation belongs to the profile below, but the older GlobalSettings copy is
+                // still read as a fallback when no profile exists. Written in step so the two can
+                // never say different things about which way the paper goes.
+                DatabaseManager.SaveGlobalSetting("PrintOrientation", orientation);
+
                 DatabaseManager.SaveOrUpdatePrinterProfile(
                     presetName, printer, paperSize, wMM, hMM,
                     (double)numMarginTop.Value,
