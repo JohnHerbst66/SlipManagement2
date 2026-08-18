@@ -1,0 +1,105 @@
+===============================================================================
+                    TRUCK LOADING SLIP MANAGEMENT SYSTEM
+                          Software Licence Agreement
+===============================================================================
+
+Copyright (c) 2026 John Herbst. All rights reserved.
+
+This software was written by John Herbst. It is not sold to you; it is licensed
+to you on the terms set out below. Please read them before installing it.
+
+
+-------------------------------------------------------------------------------
+1. WHAT YOU MAY DO
+-------------------------------------------------------------------------------
+
+You are granted, free of charge, the right to install and use this software on
+ONE computer, at ONE site, for your own day-to-day business.
+
+You may:
+
+  - Use it for as long as you like. This licence does not expire.
+  - Make backup copies of it for your own protection.
+  - Change any settings, field names, printer setups and company details.
+
+
+-------------------------------------------------------------------------------
+2. WHAT YOU MAY NOT DO
+-------------------------------------------------------------------------------
+
+Without written permission from John Herbst, you may not:
+
+  - Install or run it on any additional computer or at any additional site.
+  - Give, lend, sell, rent or otherwise pass a copy to anyone else, including
+    another company in the same group.
+  - Sell it, or sell anything built from it.
+  - Take it apart to recover the source code, or alter the program itself.
+  - Remove or hide the copyright notices in the program.
+
+If you want to use it at another site, or on more machines, contact John Herbst
+for an additional licence. Further licences are not free of charge. The free
+licence granted here covers the single installation described in Section 1.
+
+
+-------------------------------------------------------------------------------
+3. YOUR RECORDS BELONG TO YOU
+-------------------------------------------------------------------------------
+
+Every slip you enter, and the database holding them, are YOUR records and remain
+your property entirely. Nothing in this licence gives John Herbst any claim over
+them, and no part of this software will ever prevent you from opening, reading
+or exporting your own records.
+
+Your data is stored on your own computer at:
+
+    C:\ProgramData\UitvalSlips\
+
+It is never sent anywhere. The software does not connect to the internet.
+
+Keep your own backups of that folder. The program takes a backup each time it
+starts, but those live on the same computer, and a computer that fails takes
+both with it.
+
+
+-------------------------------------------------------------------------------
+4. NO WARRANTY
+-------------------------------------------------------------------------------
+
+This software is provided as it is, free of charge, without any warranty of any
+kind. It has been carefully written and tested, but it cannot be guaranteed to
+be free of faults or to be suitable for any particular purpose.
+
+John Herbst accepts no liability for any loss or damage arising from its use,
+including lost records, lost time or lost business.
+
+This software keeps a permanent record of loads leaving your yard. Check that it
+prints and records correctly before you rely on it for real loads, and keep your
+own backups. If you find something wrong, please report it.
+
+
+-------------------------------------------------------------------------------
+5. ENDING THIS LICENCE
+-------------------------------------------------------------------------------
+
+This licence ends if you breach Section 2. If it ends, you must stop using the
+software and remove it from your computer.
+
+Your records remain yours. On request, John Herbst will help you export
+everything into Excel so nothing is lost.
+
+
+-------------------------------------------------------------------------------
+6. GENERAL
+-------------------------------------------------------------------------------
+
+This agreement is governed by the law of the Republic of South Africa.
+
+Copyright in this software remains with John Herbst at all times. Nothing here
+transfers ownership of the software to you.
+
+Contact for permissions, additional licences and support:
+
+    John Herbst
+    herbstjohn5@gmail.com
+
+===============================================================================

@@ -26,7 +26,7 @@ namespace SlipManagement2
         public FirstTimeSetupForm()
         {
             Text            = "Welcome — First Time Setup";
-            ClientSize      = new Size(520, 475);
+            ClientSize      = new Size(520, 505);
             StartPosition   = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
@@ -192,6 +192,23 @@ namespace SlipManagement2
                 ForeColor = Color.Gray,
                 Location  = new Point(20, 410),
                 Size      = new Size(480, 18),
+                AutoSize  = false,
+                TextAlign = ContentAlignment.MiddleCenter,
+            });
+
+
+            // Ownership notice. Shown here because setup is the one screen every operator sees
+            // exactly once, on the machine this copy is licensed to. The full terms ship as
+            // LICENCE.txt alongside the program, and the installer shows them before copying
+            // anything -- this is the reminder, not the agreement.
+            Controls.Add(new Label
+            {
+                Text      = "Truck Loading Slip Management System    Copyright (c) 2026 John Herbst\r\n"
+                          + "Licensed for use on ONE computer at ONE site. See LICENCE.txt in the program folder.",
+                Font      = new Font("Arial", 8),
+                ForeColor = Color.FromArgb(110, 110, 110),
+                Location  = new Point(20, 436),
+                Size      = new Size(480, 32),
                 AutoSize  = false,
                 TextAlign = ContentAlignment.MiddleCenter,
             });

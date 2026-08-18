@@ -10,8 +10,69 @@ namespace SlipManagement2
 {
     public static class DatabaseManager
     {
-        private static readonly string DbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
+        // The data deliberately lives OUTSIDE the program folder. Two reasons, both of which
+        // this system cannot afford to get wrong:
+        //
+        //   1. An upgrade replaces the program folder. With the database sitting inside it,
+        //      installing a new version would delete every slip the operator has ever entered.
+        //   2. Installed under Program Files, a standard user cannot write there at all.
+        //      Windows does not fail the write; it silently redirects it into a per-user
+        //      VirtualStore copy that nobody can find and no backup covers. Slips would
+        //      appear to save and then simply not be there.
+        private static readonly string DataFolder = ResolveDataFolder();
+
+        public  static readonly string DbPath  = Path.Combine(DataFolder, "WeighbridgeData.db");
         private static string ConnStr => $"Data Source={DbPath};Version=3;";
+
+        // Exposed so the installer notes, the backup screen and any future diagnostics can all
+        // name the same folder rather than each recomputing it.
+        public static string DataDirectory => DataFolder;
+
+        private static string ResolveDataFolder()
+        {
+            string legacy = AppDomain.CurrentDomain.BaseDirectory;
+
+            string folder;
+            try
+            {
+                folder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "UitvalSlips");
+                Directory.CreateDirectory(folder);
+            }
+            catch
+            {
+                // ProgramData unreachable. Keep working beside the exe rather than refusing to
+                // start: worse for upgrades, but it never costs the operator a day's slips.
+                return legacy;
+            }
+
+            // A failed migration must NOT send us back to the program folder, which may be
+            // read-only. The new folder is usable either way; at worst the old data is still
+            // sitting where it was and can be moved by hand.
+            try { MigrateFromProgramFolder(legacy, folder); }
+            catch { }
+
+            return folder;
+        }
+
+        // Moves a database left in the program folder by an earlier version, once.
+        // Move rather than copy on purpose: two databases with the same name and diverging
+        // contents is exactly the ambiguity this system exists to prevent.
+        private static void MigrateFromProgramFolder(string legacyFolder, string newFolder)
+        {
+            string oldDb = Path.Combine(legacyFolder, "WeighbridgeData.db");
+            string newDb = Path.Combine(newFolder,    "WeighbridgeData.db");
+
+            if (!File.Exists(oldDb) || File.Exists(newDb)) return;
+
+            File.Move(oldDb, newDb);
+
+            string oldBackups = Path.Combine(legacyFolder, "Backups");
+            string newBackups = Path.Combine(newFolder,    "Backups");
+            if (Directory.Exists(oldBackups) && !Directory.Exists(newBackups))
+                Directory.Move(oldBackups, newBackups);
+        }
 
         public static void InitializeDatabase()
         {

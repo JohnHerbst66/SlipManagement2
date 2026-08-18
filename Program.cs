@@ -12,8 +12,12 @@ namespace SlipManagement2
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            string dbPath = System.IO.Path.Combine(
-                System.AppDomain.CurrentDomain.BaseDirectory, "WeighbridgeData.db");
+            // Ask DatabaseManager where the data lives rather than recomputing the path here.
+            // Reading this property is also what performs the one-time move out of the program
+            // folder, so it has to happen before anything decides whether setup is needed --
+            // otherwise an upgraded install would see no database and offer First-Time Setup
+            // on top of an operator's existing slips.
+            string dbPath = DatabaseManager.DbPath;
 
             if (!File.Exists(dbPath))
             {
