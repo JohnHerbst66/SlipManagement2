@@ -1711,14 +1711,39 @@ namespace SlipManagement2
             }
         }
 
-        // Copies the DB to Backups/ with a timestamp filename, then prunes files older than 30 days.
-        // Called once on startup. Failures are silently swallowed — backup must never block the app.
-        public static void PerformStartupBackup()
+        // How close together automatic backups are allowed to be. Startup always takes one;
+        // between then and closing time, a backup follows a print at most this often. It bounds
+        // what a database problem can cost to a few minutes of work rather than the whole day,
+        // which is what a once-per-launch backup used to risk.
+        private static readonly TimeSpan BackupInterval = TimeSpan.FromMinutes(15);
+
+        // Called once on startup. Always takes a copy, whatever the interval says.
+        public static void PerformStartupBackup() => TakeAutomaticBackup(force: true);
+
+        // Called after a slip is created, edited, printed or voided. Skips quietly if the newest
+        // backup is recent, so a busy morning does not fill the folder with near-identical copies.
+        public static void PerformChangeBackup() => TakeAutomaticBackup(force: false);
+
+        // Copies the DB into Backups/ under a timestamped name, then prunes.
+        // Failures are swallowed on purpose: a backup problem must never stop the operator
+        // printing a slip, and the print is the thing the business actually needs.
+        private static void TakeAutomaticBackup(bool force)
         {
             try
             {
-                string backupDir = Path.Combine(Path.GetDirectoryName(DbPath), "Backups");
+                string backupDir = BackupFolder;
                 Directory.CreateDirectory(backupDir);
+
+                if (!force)
+                {
+                    DateTime newest = DateTime.MinValue;
+                    foreach (string f in Directory.GetFiles(backupDir, "WeighbridgeData_*.db"))
+                    {
+                        DateTime t = File.GetLastWriteTime(f);
+                        if (t > newest) newest = t;
+                    }
+                    if (newest != DateTime.MinValue && DateTime.Now - newest < BackupInterval) return;
+                }
 
                 string stamp      = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 string backupFile = Path.Combine(backupDir, $"WeighbridgeData_{stamp}.db");
@@ -1730,14 +1755,175 @@ namespace SlipManagement2
                 // data instead of the age of the backup and can delete a copy made moments ago.
                 File.SetLastWriteTime(backupFile, DateTime.Now);
 
-                // Rolling 30-day purge
-                foreach (string f in Directory.GetFiles(backupDir, "WeighbridgeData_*.db"))
+                PruneBackups(backupDir);
+            }
+            catch { }
+        }
+
+        // Recent history stays detailed; older history thins out to one copy a day. Backing up
+        // every quarter of an hour would otherwise leave hundreds of near-identical files, and
+        // the point of an old backup is "the state on that day", not the exact minute.
+        //   - under 3 days old : every copy kept
+        //   - 3 to 30 days old : the first copy of each day kept, the rest removed
+        //   - over 30 days old : removed
+        private static void PruneBackups(string backupDir)
+        {
+            var keptDays = new HashSet<string>();
+            var files    = new List<string>(Directory.GetFiles(backupDir, "WeighbridgeData_*.db"));
+
+            // Oldest first, so the copy kept for a day is that day's earliest.
+            files.Sort((a, b) => File.GetLastWriteTime(a).CompareTo(File.GetLastWriteTime(b)));
+
+            foreach (string f in files)
+            {
+                DateTime taken = File.GetLastWriteTime(f);
+                double   ageDays = (DateTime.Now - taken).TotalDays;
+
+                if (ageDays > 30) { try { File.Delete(f); } catch { } continue; }
+                if (ageDays <= 3) continue;
+
+                string day = taken.ToString("yyyyMMdd");
+                if (keptDays.Add(day)) continue;   // first of that day - keep it
+                try { File.Delete(f); } catch { }
+            }
+        }
+
+        // ===================================================================
+        // RESTORE
+        // ===================================================================
+
+        public static string BackupFolder => Path.Combine(Path.GetDirectoryName(DbPath), "Backups");
+
+        public class BackupInfo
+        {
+            public string   FilePath  { get; set; }
+            public DateTime TakenAt   { get; set; }
+            public long     SizeBytes { get; set; }
+            // Counted by opening the file, not guessed from its size. An operator choosing which
+            // copy to go back to needs to know what is actually in each one.
+            public int      SlipCount { get; set; }
+            public int      PrintedCount { get; set; }
+            // False when the file cannot be opened or has no Slips table. Such a file is listed
+            // but refused, so a corrupt backup can never be swapped in over a working database.
+            public bool     IsUsable  { get; set; }
+        }
+
+        // Newest first. Reads every backup to report what it holds, so this is deliberately not
+        // called on a hot path.
+        public static List<BackupInfo> GetAvailableBackups()
+        {
+            var list = new List<BackupInfo>();
+            try
+            {
+                if (!Directory.Exists(BackupFolder)) return list;
+
+                foreach (string f in Directory.GetFiles(BackupFolder, "WeighbridgeData_*.db"))
                 {
-                    if (File.GetLastWriteTime(f) < DateTime.Now.AddDays(-30))
-                        File.Delete(f);
+                    var info = new BackupInfo
+                    {
+                        FilePath  = f,
+                        TakenAt   = File.GetLastWriteTime(f),
+                        SizeBytes = new FileInfo(f).Length,
+                        IsUsable  = false,
+                    };
+
+                    try
+                    {
+                        using (var conn = new SQLiteConnection($"Data Source={f};Version=3;Read Only=True;"))
+                        {
+                            conn.Open();
+                            using (var cmd = new SQLiteCommand(
+                                "SELECT COUNT(*), COALESCE(SUM(CASE WHEN Status='Printed' THEN 1 ELSE 0 END),0) FROM Slips;", conn))
+                            using (var r = cmd.ExecuteReader())
+                            {
+                                if (r.Read())
+                                {
+                                    info.SlipCount    = Convert.ToInt32(r.GetValue(0));
+                                    info.PrintedCount = Convert.ToInt32(r.GetValue(1));
+                                    info.IsUsable     = true;
+                                }
+                            }
+                        }
+                    }
+                    catch { info.IsUsable = false; }
+
+                    list.Add(info);
                 }
             }
             catch { }
+
+            list.Sort((a, b) => b.TakenAt.CompareTo(a.TakenAt));
+            return list;
+        }
+
+        // Swaps a backup in as the live database. The current file is set ASIDE, never deleted:
+        // it may hold slips entered since the backup was taken, and on a proof-of-record system
+        // the operator does not get to lose those silently just because they clicked Restore.
+        // Returns the path the previous database was moved to, or null on failure.
+        public static string RestoreFromBackup(string backupPath, out string error)
+        {
+            error = null;
+            try
+            {
+                if (!File.Exists(backupPath)) { error = "That backup file no longer exists."; return null; }
+
+                // Refuse an unreadable backup outright rather than discovering it after the swap.
+                try
+                {
+                    using (var conn = new SQLiteConnection($"Data Source={backupPath};Version=3;Read Only=True;"))
+                    {
+                        conn.Open();
+                        using (var cmd = new SQLiteCommand("SELECT COUNT(*) FROM Slips;", conn))
+                            cmd.ExecuteScalar();
+                    }
+                }
+                catch
+                {
+                    error = "That backup cannot be opened and may itself be damaged. "
+                          + "Nothing has been changed. Try an earlier one.";
+                    return null;
+                }
+
+                // Release any pooled handle, or the file moves below will fail on a lock.
+                SQLiteConnection.ClearAllPools();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                string stamp   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string setAside = Path.Combine(Path.GetDirectoryName(DbPath),
+                                               $"WeighbridgeData_replaced_{stamp}.db");
+
+                if (File.Exists(DbPath)) File.Move(DbPath, setAside);
+                else setAside = null;
+
+                try
+                {
+                    File.Copy(backupPath, DbPath, overwrite: false);
+                }
+                catch (Exception ex)
+                {
+                    // Put the original back rather than leaving the operator with no database.
+                    if (setAside != null && File.Exists(setAside) && !File.Exists(DbPath))
+                        File.Move(setAside, DbPath);
+                    error = "Could not put the backup in place: " + ex.Message;
+                    return null;
+                }
+
+                // These belong to the database just moved aside. Left behind, SQLite would try to
+                // apply them to the restored file and could corrupt it.
+                foreach (string ext in new[] { "-journal", "-wal", "-shm" })
+                {
+                    string stray = DbPath + ext;
+                    try { if (File.Exists(stray)) File.Delete(stray); } catch { }
+                }
+
+                return setAside ?? "";
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return null;
+            }
         }
 
         // ===================================================================

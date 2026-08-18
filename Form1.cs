@@ -24,6 +24,7 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             SetupEmptyState();
             SetupManageLookupsButton();
             SetupBackupButton();
+            SetupRestoreButton();
             SetupTileDisplayButton();
             SetupSummaryPanel();
 
@@ -60,6 +61,31 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
 
             this.Controls.Add(_emptyStateLabel);
             _emptyStateLabel.BringToFront();
+        }
+
+        // Sits next to Backup Now, because the two are halves of the same idea and an operator
+        // hunting for a way out of a database problem should find it beside the thing that made
+        // the backups. The fourth slot leftward, continuing the existing spacing.
+        private void SetupRestoreButton()
+        {
+            var btn = new Button
+            {
+                Text      = "Restore Backup",
+                Size      = btnCustomizeSlips.Size,
+                Location  = new Point(btnCustomizeSlips.Left - btnCustomizeSlips.Width * 4 - 24, btnCustomizeSlips.Top),
+                BackColor = Color.Khaki,
+                FlatStyle = FlatStyle.Flat,
+                UseVisualStyleBackColor = false,
+                Anchor    = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            btn.Click += BtnRestore_Click;
+            this.Controls.Add(btn);
+        }
+
+        private void BtnRestore_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new RestoreBackupForm())
+                dlg.ShowDialog(this);
         }
 
         private void SetupBackupButton()

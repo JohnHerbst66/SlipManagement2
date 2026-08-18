@@ -108,6 +108,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="PaperSizeHelper.cs" />
+    <Compile Include="RestoreBackupForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="PrinterSettingsForm.cs">
       <SubType>Form</SubType>
     </Compile>

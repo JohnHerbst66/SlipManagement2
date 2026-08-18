@@ -460,6 +460,7 @@ namespace SlipManagement2
             {
                 MessageBox.Show("Slip updated successfully.", "Saved");
                 ExecuteDynamicFilterQuery();
+                DatabaseManager.PerformChangeBackup();
             }
         }
 
@@ -520,6 +521,7 @@ namespace SlipManagement2
             {
                 MessageBox.Show($"Slip #{slipId} has been voided.", "Voided", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 ExecuteDynamicFilterQuery();
+                DatabaseManager.PerformChangeBackup();
             }
             else
             {

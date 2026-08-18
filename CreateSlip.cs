@@ -277,6 +277,10 @@ namespace SlipManagement2
             }
 
             CaptureLookupValues(fields);
+            // A saved draft is real work. Backing up here bounds what a database problem can
+            // cost to minutes rather than the whole day; the interval throttle absorbs the
+            // repetition on a busy morning.
+            DatabaseManager.PerformChangeBackup();
             UpdateOrCreateTile(fields);
             this.Close();
         }
@@ -397,6 +401,7 @@ namespace SlipManagement2
             }
 
             DatabaseManager.MarkSlipAsPrinted(ExistingSlipId);
+            DatabaseManager.PerformChangeBackup();
 
             if (this.Tag is Button cardToDelete)
             {
