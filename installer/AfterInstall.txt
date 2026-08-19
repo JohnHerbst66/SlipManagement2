@@ -1,0 +1,43 @@
+Uitval Slips is installed.
+
+WHERE YOUR SLIPS ARE KEPT
+
+   C:\ProgramData\UitvalSlips
+
+   The slip database, every automatic backup, and your licence live there - NOT in
+   the program folder. That separation is deliberate: installing a newer version
+   replaces the program and never touches your records, and uninstalling leaves them
+   behind rather than taking them with it.
+
+
+FIRST TIME YOU OPEN IT
+
+   1. A setup screen asks for your company name, printer, and paper size.
+      Fill it in and click Get Started.
+
+   2. The program will ask you to license this computer. It shows a code - send that
+      code to the address on screen and paste back the licence you are sent. Until
+      then you can open, search, print and export slips, but not create new ones.
+
+   3. Set the printing up before you issue real slips. Printer Settings, then
+      Calibration Page, then Print Test Page - measure where it lands and adjust.
+      Slips can be voided but never deleted, so anything you make while
+      experimenting stays on record for good.
+
+   No printer? Choose "Microsoft Print to PDF" and everything works to a file.
+
+
+UPDATING LATER
+
+   Run the newer setup.exe over the top. Do not uninstall first - just install. Your
+   slips, backups, licence and printer calibration all carry across untouched.
+
+
+IF SOMETHING GOES WRONG
+
+   The Main Page has a Restore Backup button. It lists every backup with its date and
+   how many slips are in it, sets your current database safely aside rather than
+   overwriting it, and puts the chosen one back.
+
+   Backups are taken automatically when the program opens and as you work, so the
+   most you can lose is a few minutes.

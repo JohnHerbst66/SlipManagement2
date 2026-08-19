@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Installer build artifacts -- staged from bin\Release each time, never source
+installer/payload/
+installer/Output/
