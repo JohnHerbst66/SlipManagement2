@@ -1,0 +1,73 @@
+===============================================================================
+   MESSAGE TO SEND WITH THE INSTALLER
+   Copy the text below the line into an email or WhatsApp.
+===============================================================================
+
+Send them ONE file:   UitvalSlips-Setup-<version>.exe
+Nothing else. No folder, no zip, no documents.
+
+If emailing: attaching a .exe will be blocked by Gmail and Outlook, even inside
+a zip. Put it in OneDrive, share the link, and send the link instead. Or hand
+over a flash drive with the one file on it.
+
+-------------------------------------------------------------------------------
+
+Hi [name],
+
+Here is the truck slip program to install.
+
+INSTALLING
+
+Run UitvalSlips-Setup and follow the steps. It puts the program in
+C:\Program Files\Uitval Slips and makes a desktop shortcut.
+
+Two things you will see on the way:
+
+  - Windows may show a blue box saying "Windows protected your PC". That is
+    only because the program did not come from the Microsoft Store. Click
+    "More info", then "Run anyway".
+
+  - It will ask you to accept the licence before it continues. Please do read
+    it. The short version: it is free, it is licensed to one computer at one
+    site, and your slips remain yours.
+
+You will also be asked for an administrator password, because it installs for
+everyone on the PC rather than just one user.
+
+FIRST TIME YOU OPEN IT
+
+1. A setup screen asks for your company name, printer and paper size.
+
+2. It will then ask you to license this computer. A code is shown on screen -
+   send me that code and I will send a licence straight back. Paste it in and
+   click Activate. Until then you can open, search, print and export slips,
+   but not create new ones.
+
+3. Please set the printing up before you start issuing real slips. Go to
+   Printer Settings, then Calibration Page, then Print Test Page, and measure
+   where it actually lands. Slips can be cancelled but never deleted, so
+   anything you create while experimenting stays on the record permanently.
+
+   No printer to hand? Choose "Microsoft Print to PDF" and it all works to a
+   file instead.
+
+YOUR SLIPS ARE KEPT SEPARATELY
+
+Everything you enter is stored in C:\ProgramData\UitvalSlips, not in the
+program folder. That means when I send you an update, you just run the new
+installer over the top - do not uninstall first - and your slips, your licence
+and your printer settings all carry across untouched.
+
+The program also backs itself up as you work. If anything ever goes wrong there
+is a "Restore Backup" button on the main screen that lists every backup with
+its date and how many slips are in it.
+
+IF SOMETHING LOOKS WRONG
+
+Tell me what you did, what you expected, and what happened instead. A photo of
+the screen helps more than anything.
+
+Thanks,
+John
+
+===============================================================================
