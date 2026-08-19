@@ -27,6 +27,7 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             SetupRestoreButton();
             SetupTileDisplayButton();
             SetupSummaryPanel();
+            SetupLicenceState();
 
             DatabaseManager.LoadUnprintedSlipsToDashboard(this.flpSlips);
 
@@ -36,6 +37,64 @@ namespace SlipManagement2 // ⚠️ Change this to match your exact project name
             UpdateEmptyState();
 
             this.Activated += (s, e) => RefreshSummary();
+        }
+
+        // The Licence button appears only when there is something to do about it, so a properly
+        // licensed machine never carries a control the operator has no use for.
+        private void SetupLicenceState()
+        {
+            if (Licence.AllowsNewRecords) return;
+
+            var banner = new Label
+            {
+                Text = "READ-ONLY  -  this computer is not licensed to create new slips. "
+                     + "Existing slips can still be opened, searched, reprinted and exported.",
+                Location  = new System.Drawing.Point(flpSlips.Left, flpSlips.Top - 26),
+                Size      = new System.Drawing.Size(flpSlips.Width, 22),
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                ForeColor = Color.FromArgb(150, 40, 40),
+                BackColor = Color.FromArgb(255, 245, 225),
+                TextAlign = ContentAlignment.MiddleCenter,
+                Anchor    = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            };
+            this.Controls.Add(banner);
+            banner.BringToFront();
+
+            var btn = new Button
+            {
+                Text      = "Licence",
+                Size      = btnCustomizeSlips.Size,
+                Location  = new System.Drawing.Point(btnCustomizeSlips.Left - btnCustomizeSlips.Width * 5 - 30,
+                                                     btnCustomizeSlips.Top),
+                BackColor = Color.Gold,
+                FlatStyle = FlatStyle.Flat,
+                Font      = new Font("Arial", 9, FontStyle.Bold),
+                UseVisualStyleBackColor = false,
+                Anchor    = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            btn.Click += (s, e) =>
+            {
+                using (var lic = new LicenceForm())
+                {
+                    // Restart rather than trying to re-enable everything in place: the New Slip
+                    // button, this banner and the button itself all key off the licence, and a
+                    // clean start is less to get wrong than unpicking it live.
+                    if (lic.ShowDialog(this) == DialogResult.OK)
+                    {
+                        MessageBox.Show("The program will restart to apply the licence.",
+                            "Licensed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        Application.Restart();
+                    }
+                }
+            };
+            this.Controls.Add(btn);
+            btn.BringToFront();
+
+            if (btnCreate != null)
+            {
+                btnCreate.Enabled = false;
+                btnCreate.Text    = "New Slip (not licensed)";
+            }
         }
 
         private void SetupEmptyState()

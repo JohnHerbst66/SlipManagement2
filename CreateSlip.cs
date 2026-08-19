@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
@@ -246,6 +246,10 @@ namespace SlipManagement2
 
         private void btnSave_Click(object sender, EventArgs e)
         {
+            // A slip is a new permanent record, so this is the point the licence applies. Reading,
+            // reprinting and exporting existing slips deliberately do not consult it.
+            if (!Licence.AllowsNewRecords) { ShowUnlicensed(); return; }
+
             string[] fields = CollectFields();
 
             if (string.IsNullOrWhiteSpace(fields[0]))
@@ -304,6 +308,10 @@ namespace SlipManagement2
 
         private void btnPrint_Click(object sender, EventArgs e)
         {
+            // A slip is a new permanent record, so this is the point the licence applies. Reading,
+            // reprinting and exporting existing slips deliberately do not consult it.
+            if (!Licence.AllowsNewRecords) { ShowUnlicensed(); return; }
+
             string[] fields = CollectFields();
             fields[6] = NormalizeTons(fields[6]);
 
@@ -435,6 +443,17 @@ namespace SlipManagement2
                 DatabaseManager.SaveLookupValue(
                     DatabaseManager.ListNameFor(key, cfg.CustomName), val.Trim());
             }
+        }
+
+        // Single place so both entry points say exactly the same thing.
+        private static void ShowUnlicensed()
+        {
+            MessageBox.Show(
+                "This computer is not licensed to create new slips." + Environment.NewLine + Environment.NewLine +
+                "Slips already recorded are unaffected - you can still open, search, reprint and " +
+                "export them from Slip History." + Environment.NewLine + Environment.NewLine +
+                "To license this computer, close this window and use Licence on the Main Page.",
+                "Not Licensed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         // Reads current values from all 10 fields — checks ComboBoxes before TextBoxes
