@@ -6,7 +6,13 @@
 ; =============================================================================
 
 #define AppName      "Uitval Slips"
-#define AppVersion   "1.0.0"
+; Read from the built exe rather than typed here. AssemblyInfo.cs is the single place
+; a version number is set; this follows it. Two hand-maintained numbers had already
+; drifted apart once - the installer said 1.0.0 while the program inside said 1.1.0.0 -
+; which makes "which version are you running?" a question with two answers on a support
+; call. If the payload has not been staged this fails the build outright, which is the
+; right outcome: better than producing a correctly-built installer wearing a wrong label.
+#define AppVersion   GetVersionNumbersString(AddBackslash(SourcePath) + "payload\SlipManagement2.exe")
 #define AppPublisher "John Herbst"
 #define AppExe       "SlipManagement2.exe"
 
