@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Printing;
@@ -386,8 +386,20 @@ namespace SlipManagement2
                 return;
             }
 
+            // Make the chosen preset the active one before calibrating. Calibration always
+            // edits the active profile, so without this you could measure one preset and have
+            // the numbers land on another.
+            DatabaseManager.SetActiveProfile(selected);
+
             using (var cal = new PrintCalibrationForm(null, selected))
                 cal.ShowDialog(this);
+
+            // Reload from the database. Calibration writes paper size and margins to the same
+            // columns this form edits, so without this the spinners still hold the pre-calibration
+            // values and the next Save Configuration writes them straight back over the
+            // measurements just taken -- calibration appearing not to save at all.
+            var refreshed = DatabaseManager.GetPrinterProfileByName(selected);
+            if (refreshed != null) LoadPresetValuesToForm(refreshed);
         }
     }
 }

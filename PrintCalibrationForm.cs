@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -10,7 +10,9 @@ namespace SlipManagement2
     public partial class PrintCalibrationForm : Form
     {
         private readonly Dictionary<string, string> _slipData;
-        private readonly string _presetName;   // null = use active profile
+        // Kept for the window title only. Which profile gets edited is NOT decided here --
+        // see ResolveTarget. Printer Settings owns that choice.
+        private readonly string _presetName;
 
         // settings controls
         private NumericUpDown _numPaperW, _numPaperH;
@@ -40,9 +42,13 @@ namespace SlipManagement2
             _slipData    = slipData ?? SampleData();
             _presetName  = presetName;
 
-            Text          = presetName != null
-                          ? $"Print Calibration — {presetName}"
-                          : "Print Calibration";
+            // Name the profile these measurements will be written to, whichever screen opened
+            // this window. Two entry points showing two different titles for the same row was
+            // how the question "am I editing the one that prints?" became unanswerable.
+            var active = ResolveTarget();
+            Text = active != null
+                 ? "Print Calibration — " + active.ProfileName + " (active preset)"
+                 : "Print Calibration — no active preset";
             ClientSize    = new Size(1020, 680);
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize   = new Size(800, 520);
@@ -254,20 +260,26 @@ namespace SlipManagement2
         // ===================================================================
         // LOAD SETTINGS
         // ===================================================================
+        // The single answer to "which profile am I editing".
+        //
+        // Always the ACTIVE profile, never a name passed in by whoever opened this window.
+        // Calibrating from Printer Settings and calibrating from the print preview used to
+        // resolve differently -- by name in one case, by IsActive in the other -- so the two
+        // could edit different rows and the operator had no way to see which. The profile is
+        // chosen in Printer Settings; this screen only ever measures the one that will print.
+        private DatabaseManager.PrinterProfileData ResolveTarget()
+        {
+            foreach (var p in DatabaseManager.GetAllPrinterProfiles())
+                if (p.IsActive) return p;
+            return null;
+        }
+
         private void LoadCurrentSettings()
         {
             _suppressRebuild = true;
             try
             {
-                DatabaseManager.PrinterProfileData target = null;
-                foreach (var p in DatabaseManager.GetAllPrinterProfiles())
-                {
-                    if (_presetName != null)
-                    {
-                        if (p.ProfileName == _presetName) { target = p; break; }
-                    }
-                    else if (p.IsActive) { target = p; break; }
-                }
+                var target = ResolveTarget();
 
                 if (target != null)
                 {
@@ -597,17 +609,20 @@ namespace SlipManagement2
         {
             try
             {
-                DatabaseManager.PrinterProfileData target = null;
-                foreach (var p in DatabaseManager.GetAllPrinterProfiles())
+                var target = ResolveTarget();
+
+                // No active profile means there is nowhere for these measurements to go. Saying
+                // "saved" and writing nothing is how calibration work disappears without trace.
+                if (target == null)
                 {
-                    if (_presetName != null)
-                    {
-                        if (p.ProfileName == _presetName) { target = p; break; }
-                    }
-                    else if (p.IsActive) { target = p; break; }
+                    MessageBox.Show(
+                        "There is no active printer preset, so these settings cannot be saved."
+                        + Environment.NewLine + Environment.NewLine +
+                        "Open Printer Settings, choose or create a preset, then calibrate again.",
+                        "Nothing to Save At", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
                 }
 
-                if (target != null)
                 {
                     // Paper/margin save (upsert; preserves calibration columns on conflict)
                     DatabaseManager.SaveOrUpdatePrinterProfile(
@@ -627,7 +642,7 @@ namespace SlipManagement2
                         GetLayout());
                 }
 
-                string savedTo = target?.ProfileName ?? "(no active profile)";
+                string savedTo = target.ProfileName;
                 MessageBox.Show($"Calibration settings saved to \"{savedTo}\".", "Saved",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 Close();
